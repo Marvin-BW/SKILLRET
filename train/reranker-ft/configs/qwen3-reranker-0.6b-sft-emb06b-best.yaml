@@ -1,0 +1,39 @@
+# SkillRet-Reranker-0.6B training config
+#
+# BCE pointwise (yes/no SFT) loss with per-positive grouping.
+# Hard negatives mined from SkillRet-Embedding-0.6B; uses ranks 20-60 (skip top-20)
+# with 7 negatives per positive, keeping the best checkpoint by eval loss.
+#
+# Usage:
+#   CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun --nproc_per_node=8 train/reranker-ft/train.py \
+#       --config train/reranker-ft/configs/qwen3-reranker-0.6b-sft-emb06b-best.yaml
+
+model: Qwen/Qwen3-Reranker-0.6B
+output_dir: outputs/qwen3-reranker-0.6b-sft-emb06b-best
+max_seq_length: 8192
+batch_size: 96
+grad_accum: 1
+lr: 2.0e-5
+warmup_ratio: 0.1
+epochs: 1
+eval_steps: 50
+save_steps: 50
+save_total_limit: 60
+logging_steps: 10
+bf16: true
+seed: 42
+
+# BCE pointwise loss, per-positive grouping, best-checkpoint selection
+loss_type: bce
+merge_queries: false
+per_positive_negatives: true
+load_best_model_at_end: true
+
+# Hard negatives mined from SkillRet-Embedding-0.6B (top-100 per query, saved to file)
+embedding_model: anonymous-ed-benchmark/SkillRet-Embedding-0.6B
+hard_negatives_file: data/hard_negatives_emb06b.json
+hard_neg_skip_top: 20
+hard_neg_top_k: 60
+num_negatives: 7
+
+wandb_run: skillret-reranker-0.6b-sft-hn7-emb06b-best
