@@ -18,7 +18,7 @@ Supports hard-negative mining from first-stage retrieval results and
 configurable number of negatives per positive pair.
 
 Training data is loaded from the HuggingFace dataset:
-    anonymous-ed-benchmark/skillret-benchmark
+    ThakiCloud/SKILLRET
 
 Usage:
     cd /path/to/skillret-benchmark
@@ -145,7 +145,7 @@ def load_config(path: str) -> dict:
         "merge_queries": True,
         "load_best_model_at_end": True,
         "embedding_model": None,
-        "eval_first_stage_file": "results/embed/anonymous-ed-benchmark_SkillRet-Embedding-0.6B.json",
+        "eval_first_stage_file": "results/embed/ThakiCloud_SKILLRET-Embedding-0.6B.json",
         "loss_type": "pointwise",
         "fixed_group_size": None,
     }
@@ -983,7 +983,7 @@ def main():
         if not emb_model:
             raise ValueError(
                 "Set 'embedding_model' in config for hard-negative mining "
-                "(e.g. Thaki/SkillRet-Embedding-8B)"
+                "(e.g. ThakiCloud/SKILLRET-Embedding-8B)"
             )
         model_base = os.environ.get("MODEL_BASE_DIR", "")
         if model_base:

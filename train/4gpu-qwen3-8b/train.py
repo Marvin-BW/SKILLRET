@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 # ── Paths ──────────────────────────────────────────────────────────────────
 BASE_MODEL = "/path/to/models/Qwen3-Embedding-8B"  # TODO: set your model path
 OUTPUT_DIR = "./outputs"  # TODO: set your output path
-HF_DATASET = "anonymous-ed-benchmark/skillret-benchmark"
+HF_DATASET = "ThakiCloud/SKILLRET"
 
 # ── Hyperparameters (4x B200, DDP+GC, effective_batch=80, max mode) ───────
 # Total steps ≈ 127,190 / 80 ≈ 1590 steps (1 epoch)

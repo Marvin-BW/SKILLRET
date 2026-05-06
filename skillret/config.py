@@ -5,7 +5,7 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 # Per-model FAISS index + metadata.
 EMBEDDING_CACHE_DIR = DATA_DIR / "indexes"
 
-HF_DATASET_ID = "anonymous-ed-benchmark/skillret-benchmark"
+HF_DATASET_ID = "ThakiCloud/SKILLRET"
 
 
 SKILL_QUERY_PROMPT = "Instruct: Given a skill search query, retrieve relevant skills that match the query\nQuery: "
@@ -97,12 +97,12 @@ EMBEDDING_MODEL_CONFIG: dict[str, dict] = {
         "query_kwargs": {"prompt": "Instruct: Given a query, retrieve documents that answer the query \nQuery: "},
     },
     # --- Fine-tuned models ---
-    "anonymous-ed-benchmark/SkillRet-Embedding-8B": {
+    "ThakiCloud/SKILLRET-Embedding-8B": {
         "batch_size": 8,
         "max_seq_length": 32768,
         "query_kwargs": {"prompt": SKILL_QUERY_PROMPT},
     },
-    "anonymous-ed-benchmark/SkillRet-Embedding-0.6B": {
+    "ThakiCloud/SKILLRET-Embedding-0.6B": {
         "batch_size": 16,
         "max_seq_length": 32768,
         "query_kwargs": {"prompt": SKILL_QUERY_PROMPT},
@@ -129,10 +129,10 @@ RERANKING_MODEL_CONFIG: dict[str, dict] = {
     "Qwen/Qwen3-Reranker-0.6B":               {"batch_size": 32, "max_seq_length": 32768},
     "Qwen/Qwen3-Reranker-4B":                  {"batch_size": 4, "max_seq_length": 32768},
     "Qwen/Qwen3-Reranker-8B":                  {"batch_size": 4, "max_seq_length": 32768},
-    "anonymous-ed-benchmark/SkillRet-Reranker-0.6B":        {"batch_size": 32, "max_seq_length": 32768},
+    "ThakiCloud/SKILLRET-Reranker-0.6B":        {"batch_size": 32, "max_seq_length": 32768},
     "pipizhao/SkillRouter-Reranker-0.6B":  {"batch_size": 32, "max_seq_length": 32768},
-    "anonymous-ed-benchmark/SkillRet-Reranker-0.6B-listwise-hn7-step700": {"batch_size": 32, "max_seq_length": 32768},
-    "anonymous-ed-benchmark/SkillRet-Reranker-0.6B-listwise-pp20-step800": {"batch_size": 32, "max_seq_length": 32768},
+    "ThakiCloud/SKILLRET-Reranker-0.6B-listwise-hn7-step700": {"batch_size": 32, "max_seq_length": 32768},
+    "ThakiCloud/SKILLRET-Reranker-0.6B-listwise-pp20-step800": {"batch_size": 32, "max_seq_length": 32768},
 }
 
 RERANKING_MODELS = list(RERANKING_MODEL_CONFIG.keys())

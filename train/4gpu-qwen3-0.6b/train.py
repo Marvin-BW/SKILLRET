@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 # ── Paths ──────────────────────────────────────────────────────────────────
 BASE_MODEL = "/path/to/models/Qwen3-Embedding-0.6B"  # TODO: set your model path
 OUTPUT_DIR = "./outputs"  # TODO: set your output path
-HF_DATASET = "anonymous-ed-benchmark/skillret-benchmark"
+HF_DATASET = "ThakiCloud/SKILLRET"
 
 # ── Hyperparameters (4x B200, DDP+GC, effective_batch=384) ────────────────
 # Identical to Harrier-0.6B 4-GPU for fair comparison

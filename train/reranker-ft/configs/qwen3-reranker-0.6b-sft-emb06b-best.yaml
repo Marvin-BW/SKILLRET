@@ -30,7 +30,7 @@ per_positive_negatives: true
 load_best_model_at_end: true
 
 # Hard negatives mined from SkillRet-Embedding-0.6B (top-100 per query, saved to file)
-embedding_model: anonymous-ed-benchmark/SkillRet-Embedding-0.6B
+embedding_model: ThakiCloud/SKILLRET-Embedding-0.6B
 hard_negatives_file: data/hard_negatives_emb06b.json
 hard_neg_skip_top: 20
 hard_neg_top_k: 60

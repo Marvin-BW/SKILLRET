@@ -50,8 +50,8 @@ FIRST_STAGE_FILES["microsoft_harrier-oss-v1-270m"]="results/embed/microsoft_harr
 FIRST_STAGE_FILES["microsoft_harrier-oss-v1-0.6b"]="results/embed/microsoft_harrier-oss-v1-0.6b.json"
 FIRST_STAGE_FILES["Qwen_Qwen3-Embedding-0.6B"]="results/embed/Qwen_Qwen3-Embedding-0.6B.json"
 FIRST_STAGE_FILES["Qwen_Qwen3-Embedding-8B"]="results/embed/Qwen_Qwen3-Embedding-8B.json"
-FIRST_STAGE_FILES["anonymous-ed-benchmark_SkillRet-Embedding-0.6B"]="results/embed/anonymous-ed-benchmark_SkillRet-Embedding-0.6B.json"
-FIRST_STAGE_FILES["anonymous-ed-benchmark_SkillRet-Embedding-8B"]="results/embed/anonymous-ed-benchmark_SkillRet-Embedding-8B.json"
+FIRST_STAGE_FILES["ThakiCloud_SKILLRET-Embedding-0.6B"]="results/embed/ThakiCloud_SKILLRET-Embedding-0.6B.json"
+FIRST_STAGE_FILES["ThakiCloud_SKILLRET-Embedding-8B"]="results/embed/ThakiCloud_SKILLRET-Embedding-8B.json"
 
 # Filter and validate first-stage files
 VALID_FIRST_STAGES=()

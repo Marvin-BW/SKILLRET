@@ -39,7 +39,7 @@ All models are loaded by their HuggingFace ID and **downloaded automatically** o
 ## Dataset
 
 The benchmark dataset is hosted on HuggingFace:
-[anonymous-ed-benchmark/skillret-benchmark](https://huggingface.co/datasets/anonymous-ed-benchmark/skillret-benchmark)
+[ThakiCloud/SKILLRET](https://huggingface.co/datasets/ThakiCloud/SKILLRET)
 
 | Subset  | Split | Records | Description                           |
 |---------|-------|--------:|---------------------------------------|
@@ -152,9 +152,9 @@ Key training settings: BCE loss, per-positive grouping, 1 epoch, ~6h on 8× B200
 
 | Model | Type | HuggingFace |
 |-------|------|-------------|
-| SkillRet-Embedding-0.6B | Embedding | [anonymous-ed-benchmark/SkillRet-Embedding-0.6B](https://huggingface.co/anonymous-ed-benchmark/SkillRet-Embedding-0.6B) |
-| SkillRet-Embedding-8B | Embedding | [anonymous-ed-benchmark/SkillRet-Embedding-8B](https://huggingface.co/anonymous-ed-benchmark/SkillRet-Embedding-8B) |
-| SkillRet-Reranker-0.6B | Reranker | anonymous-ed-benchmark/SkillRet-Reranker-0.6B |
+| SKILLRET-Embedding-0.6B | Embedding | [ThakiCloud/SKILLRET-Embedding-0.6B](https://huggingface.co/ThakiCloud/SKILLRET-Embedding-0.6B) |
+| SKILLRET-Embedding-8B | Embedding | [ThakiCloud/SKILLRET-Embedding-8B](https://huggingface.co/ThakiCloud/SKILLRET-Embedding-8B) |
+| SKILLRET-Reranker-0.6B | Reranker | ThakiCloud/SKILLRET-Reranker-0.6B |
 
 ## Results
 
@@ -178,8 +178,8 @@ Key training settings: BCE loss, per-positive grouping, 1 epoch, ~6h on 8× B200
 | Qwen3-Embedding-8B | 8B | 57.57 | 59.98 | 67.06 | 50.01 |
 | Octen-Embedding-8B | 8B | 60.35 | 62.56 | 68.17 | 51.31 |
 | KaLM-Gemma3-12B | 12B | 52.68 | 55.38 | 63.94 | 47.85 |
-| **[SkillRet-Embedding-0.6B](https://huggingface.co/anonymous-ed-benchmark/SkillRet-Embedding-0.6B) (ours)** | 0.6B | 75.57 | 78.03 | 85.42 | 75.09 |
-| **[SkillRet-Embedding-8B](https://huggingface.co/anonymous-ed-benchmark/SkillRet-Embedding-8B) (ours)** | 8B | **81.23** | **83.45** | **91.23** | **84.63** |
+| **[SKILLRET-Embedding-0.6B](https://huggingface.co/ThakiCloud/SKILLRET-Embedding-0.6B) (ours)** | 0.6B | 75.57 | 78.03 | 85.42 | 75.09 |
+| **[SKILLRET-Embedding-8B](https://huggingface.co/ThakiCloud/SKILLRET-Embedding-8B) (ours)** | 8B | **81.23** | **83.45** | **91.23** | **84.63** |
 
 ### Reranking (SkillRet-Embedding-0.6B top-20)
 
