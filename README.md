@@ -1,6 +1,12 @@
 # SkillRet: A Benchmark for AI Agent Skill Retrieval
 
+[![arXiv](https://img.shields.io/badge/arXiv-2605.05726-b31b1b.svg)](https://arxiv.org/abs/2605.05726)
+[![Dataset](https://img.shields.io/badge/🤗%20Dataset-ThakiCloud%2FSKILLRET-yellow)](https://huggingface.co/datasets/ThakiCloud/SKILLRET)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
 This repository is the official implementation of **SkillRet: A Benchmark for AI Agent Skill Retrieval**.
+
+📄 **Paper**: [SkillRet: A Large-Scale Benchmark for Skill Retrieval in LLM Agents (arXiv:2605.05726)](https://arxiv.org/abs/2605.05726)
 
 Given a natural-language user query (e.g., *"Can you review my staged changes before I commit?"*), the task is to retrieve the most relevant skill(s) from a library of 6,660 AI agent skills collected from open-source repositories.
 
@@ -223,6 +229,22 @@ All metrics computed via `pytrec_eval` at k={5, 10, 15}:
 | Recall@k | Fraction of relevant skills retrieved |
 | Completeness@k | Fraction of queries with perfect recall |
 | MAP@k | Mean Average Precision |
+
+## Citation
+
+If you use SkillRet, please cite:
+
+```bibtex
+@article{cho2026skillret,
+  title   = {SkillRet: A Large-Scale Benchmark for Skill Retrieval in LLM Agents},
+  author  = {Cho, Hongcheol and Kang, Ryangkyung and Kim, Youngeun},
+  journal = {arXiv preprint arXiv:2605.05726},
+  year    = {2026},
+  url     = {https://arxiv.org/abs/2605.05726}
+}
+```
+
+**Paper**: [https://arxiv.org/abs/2605.05726](https://arxiv.org/abs/2605.05726)
 
 ## License
 
