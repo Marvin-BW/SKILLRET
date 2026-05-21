@@ -1,0 +1,2888 @@
+SkillRet: A Large-Scale Benchmark
+for Skill Retrieval in LLM Agents
+
+Hongcheol Cho∗ Ryangkyung Kang∗ Youngeun Kim†
+
+arXiv:2605.05726v1 [cs.AI] 7 May 2026
+
+ThakiCloud
+
+Abstract
+As LLM agents are increasingly deployed with large libraries of reusable skills,
+selecting the right skill for a user request has become a critical systems challenge.
+In small libraries, users may invoke skills explicitly by name, but this assumption
+breaks down as skill ecosystems grow under tight context and latency budgets.
+Despite its practical importance, skill retrieval remains underexplored, with limited
+benchmarks and little understanding of retrieval behavior on realistic skill libraries.
+To address this gap, we introduce S KILL R ET, a large-scale benchmark for skill
+retrieval in LLM agents. S KILL R ET contains 17,810 public agent skills, organized
+with structured semantic tags and a two-level taxonomy spanning 6 major categories
+and 18 sub-categories. It provides 63,259 training samples and 4,997 evaluation
+queries with disjoint skill pools, enabling both benchmarking and retrieval-oriented
+training. Across a diverse set of retrievers, we find that skill retrieval remains far
+from solved: off-the-shelf models struggle on realistic large-scale skill libraries,
+and prior skill-retrieval models still leave substantial headroom. Task-specific finetuning on S KILL R ET substantially improves performance, improving NDCG@10
+by +13.1 points over the strongest prior retriever and by +16.9 points over the
+strongest off-the-shelf retriever. Our analysis further suggests that these gains arise
+because fine-tuned models better focus on the small skill-relevant signals within
+long and noisy queries. These results establish S KILL R ET as a strong benchmark
+and foundation for future research on retrieval in large-scale agent systems. We
+publicly release the benchmark, code, and model checkpoints (0.6B, 8B).
+
+1
+
+Introduction
+
+As LLM agents become more capable, they increasingly rely on reusable skills (i.e., long-form
+procedural modules such as prompts, scripts, workflows, and execution policies) to solve complex
+tasks [33, 12, 38, 27]. In small-scale settings, users can often invoke such skills explicitly by name.
+However, this assumption becomes brittle as agent ecosystems grow. When a system maintains a
+large default pool of reusable skills, it is no longer practical to expose the entire library in context
+or expect users to know which skill should be activated for a given request. Instead, future agent
+systems will increasingly require an explicit retrieval layer that selects a small, relevant subset of
+skills for the current task, both to reduce context cost and to enable robust automated skill use at scale
+[16]. This shift is already visible in recent agent systems such as MetaClaw [31], XSkill [11], and
+WebXSkill [30], which rely on inference-time retrieval of task-relevant skills or knowledge to guide
+downstream execution.
+This trend makes skill retrieval and selection a central systems problem. The key challenge is whether
+agents can identify the right skills from a large library under realistic inference constraints. However,
+∗ Equal contribution. Equal contributors are listed in alphabetical order.
+† Corresponding author: youngeun.kim@thakicloud.com
+
+Preprint.
+
+Table 1: Comparison of S KILL R ET with related benchmarks and work. Unlike prior skill benchmarks
+that mainly evaluate end-to-end performance, S KILL R ET isolates skill retrieval as a standalone
+problem and provides large-scale train/evaluation splits for retrieval-model development. Compared
+with the closest skill-retrieval work, SkillRouter, S KILL R ET offers a substantially larger evaluation
+set and a larger public training set. † SkillRouter reports 37,979 training data, but the training data are
+not publicly released.
+Benchmark
+
+Task
+
+Target
+
+# Eval Samples
+
+Train
+
+# Train Samples
+
+ToolRet [25]
+
+Retrieval
+
+Tool
+
+7,615
+
+✓
+
+>200K
+
+SkillsBench [19]
+SWE-Skills-Bench [7]
+AgentSkillOS [17]
+
+End-to-End Performance
+End-to-End Performance
+End-to-End Performance
+
+Skill
+Skill
+Skill
+
+86
+565
+30
+
+×
+×
+×
+
+–
+–
+–
+
+SkillRouter [37]
+S KILL R ET (ours)
+
+Retrieval
+Retrieval
+
+Skill
+Skill
+
+75
+4,997
+
+✓
+✓
+
+37,979†
+63,259
+
+despite the growing need for reliable skill selection, its evaluation remains underdeveloped. As
+shown in Table 1, prior skill benchmarks [19, 7, 17] mainly focus on end-to-end execution rather
+than retrieval itself, while existing retrieval benchmarks either target tools or provide only limited
+evaluation scale. ToolRet studies tool retrieval and shows that even strong IR models struggle in that
+setting [25]. SkillRouter is the closest prior work on skill retrieval, but provides only 75 evaluation
+queries and does not publicly release its training data [37]. These limitations point to the need for a
+larger, publicly available benchmark with substantial training and evaluation splits that isolates skill
+retrieval as a standalone problem.
+To address this gap, we introduce S KILL R ET, a large-scale benchmark for skill retrieval in LLM
+agents. S KILL R ET is built from 17,810 public agent skills, curated from a raw crawl of 22,795 listings
+through a filtering pipeline. It provides 63,259 public training samples and 4,997 evaluation samples,
+enabling both controlled benchmarking and retrieval-oriented model development. We further annotate the corpus with semantic tags and a two-level taxonomy spanning 6 major categories and 18
+sub-categories, supporting fine-grained analysis across domains and difficulty factors. Altogether,
+S KILL R ET captures a realistic retrieval environment characterized by long-context skill documents
+and imbalanced skill distributions.
+We benchmark a broad range of retrieval and reranking models on S KILL R ET. Our experiments reveal
+several key findings. First, skill retrieval remains challenging: even the strongest off-the-shelf retriever
+achieves limited performance, indicating that existing models are not well suited for retrieving
+relevant skills from queries. Second, task-specific fine-tuning on our training data yields substantial
+gains, allowing smaller fine-tuned models to match or even surpass much larger off-the-shelf models.
+Third, reranking is most effective when the first-stage retriever has remaining headroom, but its
+marginal benefit diminishes once the base retriever becomes strong. Finally, our analysis shows that
+fine-tuned models improve retrieval by better focusing on the small skill-relevant sentences embedded
+within long, noisy, and compositional queries. These results establish skill retrieval as a distinct
+retrieval problem and position S KILL R ET as a strong foundation for future research in large-scale
+agent systems.
+
+2
+
+Related Work
+
+2.1
+
+Agent Skills
+
+Recent work increasingly treats skills as a reusable abstraction layer for agent systems. Recent work
+increasingly treats such skills as a core component of agent design. MetaClaw proposes a continual
+meta-learning framework that jointly evolves a base LLM policy and a reusable skill library, using
+failure trajectories to synthesize new skills and improve agents without downtime [31]. XSkill studies
+continual learning in multimodal agents through two forms of reusable knowledge retrieved and
+adapted to the current visual context at inference time [11]. WebXSkill focuses on autonomous
+web agents and introduces executable skills that combine parameterized action programs with steplevel natural language guidance, organized in a URL-based graph for context-aware retrieval [30].
+2
+
+These systems show that reusable skills are becoming a practical design pattern and that inferencetime access to skill libraries is increasingly important. Another research driection is about the
+studies broader skill ecosystems and usefulness. AgentSkillOS studies ecosystem-scale organization,
+selection, and orchestration through capability trees and DAG-based multi-skill pipelines, evaluating
+30 artifact-rich tasks across five categories [17]. SkillsBench measures whether skills improve
+performance across 86 tasks in 11 domains, showing gains from curated skills but no average
+benefit from self-generated skills [19]. SWE-Skills-Bench similarly evaluates public SWE skills on
+requirement-driven software engineering tasks and finds that most skills provide little or no pass-rate
+improvement [7]. These works are complementary to ours: they show that skill ecosystems are already
+emerging and that downstream skill usefulness is highly variable. However, these benchmarks do not
+isolate skill retrieval quality as a standalone problem. In end-to-end skill-use settings, failures can
+arise from the intrinsic usefulness of the selected skill, orchestration errors, execution failures, or
+contextual mismatch, making it difficult to attribute performance specifically to retrieval.
+2.2
+
+Skill Retrieval Benchmarks and Skill Routing
+
+A smaller but growing line of work studies retrieval more directly. In the tool setting, ToolRet
+introduces a benchmark with 7.6K retrieval tasks and 43K tools, showing that models strong on
+conventional IR benchmarks still struggle on tool retrieval [25]. This is an important precedent for our
+setting: retrieval should be treated as a first-class agent bottleneck rather than a solved preprocessing
+step. However, ToolRet focuses on tools rather than skills, and therefore does not capture the longform procedural content, reusable prompting logic, and compositional structure of real skill libraries.
+SkillFlow [16] is complementary to our work because it proposes an agent-facing multi-stage pipeline
+for retrieving and selecting skills from a large community skill library, whereas S KILL R ET isolates
+skill retrieval as a standalone benchmark with public train/evaluation splits and controlled rankingbased evaluation. The closest prior work is SkillRouter, which studies skill selection over roughly 80K
+candidate skills using a two-stage retrieve-and-rerank pipeline and a benchmark of 75 expert-verified
+queries [37]. A key finding is that the full skill body carries decisive routing signal, and removing
+it causes large performance drops across retrieval methods [37]. At the same time, SkillRouter is
+primarily a routing-model paper rather than a benchmark paper. Its core contribution is how to design
+and train a scalable router, whereas our goal is to provide a broader benchmark for comparing retrieval
+quality across models and settings.
+
+3
+
+SkillRet Benchmark
+
+S KILL R ET is a large-scale benchmark for retrieving relevant agent skills from a curated library
+of publicly available skills. Starting from 22,795 community-contributed skills, we apply quality
+filtering and deduplication to obtain 17,810 skills (Section 3.1). We then generate natural-language
+queries that mirror realistic agent invocation patterns, where each query requires one or more skills
+from the library (Section 3.2). Finally, we filter the generated query–skill pairs through automatic
+checks, LLM-based review, and human expert validation, yielding disjoint training and evaluation
+splits with no skill overlap. Fig. 1 illustrates the full data construction pipeline.
+3.1
+
+Data Collection and Quality Filtering
+
+Raw corpus. We start from a snapshot of 22,795 agent skills crawled from claude-plugins.dev3 ,
+a community-maintained, open-source marketplace that auto-indexes all public agent skills on
+GitHub. Each record contains a skill identifier, name, natural-language description, the full skill
+body (SKILL.md), and marketplace metadata including GitHub stars, platform-specific install counts,
+author, namespace, and license.
+Five-stage filtering. We apply a pipeline to remove noise and redundancy, organized into two
+phases: content eligibility (Steps 1–3) ensures each skill meets basic quality and legal requirements,
+and deduplication (Steps 4–5) removes redundant entries. (1) Description recovery and pruning:
+listings with missing or stub descriptions (< 10 characters) are recovered via YAML frontmatter
+parsing or first-paragraph extraction; unrecoverable entries are removed (3 skills). (2) Language
+filtering: skills whose body contains more than 3% non-Latin characters are removed, retaining
+3 https://claude-plugins.dev
+
+3
+
+Source Pool
+
+Sampling (k ∈ {1, 2, 3})
+
+Query Generation
+
+Automated Filtering
+
+Human
+Validation
+
+3-gram Leakage
+Filter
+
+3 Expert
+Annotators
+Web-based
+review tool
+
+Training Pool
+
+Final SkillRet
+Dataset
+
+Query Generated by Qwen
+
+165
+
+Skills selected proportional
+to lack of representation in
+previous cycles.
+
+Seeds
+queries
+→
+
+17,810
+Curated
+Agent
+Skills
+
+(Qwen3.5-122B-A10B)
+
+Inverse-Frequency Weighting
+
+Skill 1
+install-git-hooks
+
+"Set up pre-commit hooks for markdown linting in our
+docs repo. After the hooks are configured, commit the
+current changes with a message like chore(docs): add
+markdown linting pre-commit hook."
+
+→
+
+Install pre-commit hooks to automatically lint
+markdown files before commits
+
+→
+
+Query Generated by Claude
+
+Creates git commits following
+Conventional Commits
+format with type/scope/subject.
+
+Multi-perspective
+
+LLM Review
+(Claude Sonnet 4.6)
+
+"We're setting up a new documentation repository
+and need to ensure markdown quality. Configure
+automatic style checks that run every time someone
+tries to commit and record the setup properly."
+
+→
+
+→
+
+Eval Pool
+(Claude Opus 4.6)
+
+Skill 2
+git-commit
+
+< 10% overlap
+with skill
+documentation
+
+3 perspectives
+- Coherence
+- Quality
+- Discriminability
+
+Train
+Pool
+
+Expert reviewers
+perform
+final quality gate
+
+Checking for
+Realism &
+Alignment
+
+10,123
+skills
+63,259
+queries
+
+Eval
+Pool
+6,660
+skills
+4,997
+queries
+
+Figure 1: Overview of the S KILL R ET data generation pipeline. Starting from 165 seed queries and
+17,810 curated agent skills, we sample skills using inverse-frequency weighting and prompt an
+LLM to synthesize realistic user messages that naturally require the selected capabilities. Training
+queries are generated with Qwen3.5-122B-A10B, while evaluation queries are generated with Claude
+Opus 4.6. Generated queries are then passed through automated filtering, LLM-based review, and
+human expert validation, yielding a training pool of 63,259 queries and 4,997 evaluation queries.
+
+only English-language skills (1,319 skills). (3) License filtering: skills declaring a license other than
+MIT or Apache-2.0 are excluded (255 skills); license-undeclared near-duplicates of these entries are
+identified by normalized content hashes and also removed (1,249 total). (4) Content deduplication:
+each skill body is normalized (strip YAML, lowercase, remove non-alphanumeric) and hashed with
+SHA-256; among duplicates we retain the entry with the highest star and install counts (1,547 skills
+removed). (5) Search-target deduplication: skills sharing an identical normalized name–description
+pair are deduplicated on the concatenated hash, again keeping the most popular entry (867 skills
+removed).
+After filtering, 17,810 skills remain (78.1% of the raw corpus), forming the document corpus for the
+benchmark. The per-step attrition is tabulated in Appendix B.1 (Table 7). These 17,810 skills are split
+into a training pool of 10,123 skills and a held-out evaluation pool of 6,660 skills, with no overlap
+between the two splits.
+3.2
+
+Skill–Query Pair Generation
+
+To construct a realistic evaluation set, we generate natural-language user queries via a self-instructstyle [29] pipeline in which a large language model is prompted to produce queries that include one
+or more skills from the library.
+Seed examples. To encourage lexical and structural diversity, we supply each generation call with
+a random subset of the GAIA benchmark validation set [21] (165 questions) as style seeds. These
+seeds illustrate the range of tones, lengths, and request types found in realistic user messages, and the
+model is instructed to match this diversity rather than converge on a fixed template.
+Skill sampling. For each generation call we sample k ∈ {1, 2, 3} skills uniformly at random, where
+k is drawn with equal probability across the three values. Skills are selected via inverse-frequency
+weighted sampling [14, 4]: each skill’s probability is proportional to 1/(freq + 1), where freq is the
+number of queries already generated for that skill. A first pass exhausts all skills with zero coverage
+before any skill is repeated, ensuring that every skill in the library is represented at least once in the
+final set.
+Query generation. Each generation call receives the name and description of the sampled skills
+(without the full skill body) and is instructed to produce a single user message that naturally requires
+all selected skills. The prompt explicitly forbids mentioning any skill name in the generated query,
+forcing the task need to emerge from the scenario description rather than from lexical overlap with
+the skill identifier. Previously generated queries for the same skill are shown to the model to suppress
+near-duplicate outputs. Evaluation queries are generated with Claude Opus 4.6 [2], while training
+queries are generated with Qwen3.5-122B-A10B [23]. If the model judges the skill combination to
+be unrealistic, it may output a designated null token, and that combination is discarded. Full prompt
+details are provided in Appendix C.1.
+4
+
+Quality filtering and human validation. Generated queries pass through a two-stage automatic
+filter followed by human expert review. (1) Leakage detection. We compute the 3-gram overlap
+between each query and its associated skill documentation. Queries whose overlap ratio exceeds
+a threshold of 10% are flagged as leaking skill content and discarded. (2) Multi-perspective LLM
+review. A second LLM call evaluates each query from three independent reviewer perspectives: skill
+coherence (does the query genuinely require the skill?), query quality (is the request specific and
+realistic?), and benchmark discriminability (would a model without the skill fail to answer it?). A
+query is rejected if two or more of the three perspectives return an invalid verdict; a single invalid
+verdict routes the query to human review rather than discarding it outright. Full prompts are provided
+in Appendix C.2. (3) Human expert validation. Queries that pass automatic filtering are reviewed by
+three expert annotators using a custom web-based review tool. The tool presents each query alongside
+the associated skill name, description, and the LLM pre-judgment rationale, allowing annotators to
+assess skill–query alignment, realism, and discriminability. Annotators cast a binary valid/invalid
+mark. This stage serves as the final quality gate, catching subtle failures that automated filters miss,
+such as queries that are plausible in isolation but do not genuinely depend on the paired skill.
+Training and evaluation splits. To construct query sets for both splits, we generate training queries
+using Qwen3.5-122B-A10B [23] and evaluation queries using Claude Opus 4.6 [2]. We deliberately
+use different model families for the two splits so that retrieval models trained on the training set cannot
+exploit stylistic artifacts of a single generator to inflate evaluation scores; the larger scale of training
+generation (63,259 queries) also makes the open-weight model the practical choice, allocating the
+higher-capacity model to the evaluation set, where query quality directly affects benchmark reliability.
+The resulting split comprises a training pool of 10,123 skills and 63,259 queries, and an evaluation
+pool of 6,660 skills and 4,997 queries, with zero skill overlap between the two sets. As Fig. 5
+shows (in Appendix), the major-category distribution of each split deviates by less than 1 pp from
+the full library, confirming that the split preserves the natural category distribution without explicit
+stratification.
+
+4
+
+Benchmark Analysis
+
+4.1
+
+Taxonomy Overview
+
+The taxonomy is constructed through a five- Table 2: Taxonomy overview: 6 Major and 18 Substage pipeline. (1) Tag Discovery: an LLM an- categories covering 17,810 skills.
+notates each skill with three structured tags (priMajor Category Sub-Category
+Skills % Total
+mary_action, primary_object, domain) similar
+to [6, 39] (2) Clustering: k-means over tag vec- Software Eng.
+Development
+4,423
+24.8
+tors at multiple resolutions reveals stable clusAnalysis & Testing 2,320
+13.0
+Infra. & DevOps
+1,970
+11.1
+ters, i.e., groups that persist across different
+Documentation
+889
+5.0
+values of k. (3) Taxonomy Construction: staVersion Control
+756
+4.2
+ble clusters seed an initial draft, which experts
+Security
+727
+4.1
+iteratively refine into 6 Major categories and
+Agent Development 1,194
+6.7
+18 Sub-categories. (4) LLM-based Assignment: AI Agents
+Agent Orchestration
+607
+3.4
+because three-axis tags capture only surfaceAgent Evaluation
+273
+1.5
+level attributes, we employ Claude Sonnet 4.6
+Business
+Business
+Analysis
+821
+4.6
+to classify all 17,810 skills using their full name
+Project Mgmt.
+788
+4.4
+and description (Appendix B.5 reports represen- & Planning
+tative tag-rule failures that motivate this design
+Data & ML
+ML Development
+477
+2.7
+choice). (5) Human Validation: a stratified samData Engineering
+418
+2.3
+Data Analysis
+416
+2.3
+ple of 200 skills is independently verified by experts, yielding an average accuracy of 95.5% for
+Content
+Writing & Text
+687
+3.9
+major categories and 92.2% for sub-categories, Creation
+Visual & Media
+489
+2.7
+with full three-way agreement on 91.0% and
+Info.
+General Search
+357
+2.0
+84.5% of items respectively. Appendix B.4 pro- Retrieval
+Technical Search
+198
+1.1
+vides full details of each stage. Software Engineering accounts for 62.2% of the corpus while Information Retrieval comprises only 3.1%, mirroring
+the natural composition of public agent skill ecosystems (Fig. 4 in the Appendix).
+5
+
+1000
+500
+0
+
+100
+
+1,000 10,000
+
+Skill length (tokens)
+
+SE
+
+AI B&P D&ML CC IR
+
+104
+103
+102
+101
+100
+
+Skill major category
+
+(a)
+
+(b)
+
+Eval
+Train
+
+0
+
+200
+
+400
+
+Query length (words)
+
+(c)
+
+Percentage (%)
+
+Tokens
+
+Count
+
+1500
+
+6000
+5000
+4000
+3000
+2000
+1000
+0
+
+Count (log scale)
+
+Median = 1,583
+
+2000
+
+600
+
+46%
+
+40
+
+40%
+33%
+33%
+
+20
+0
+
+Eval
+Train
+34%
+13%
+
+k=1 k=2 k=3
+# Skills per query
+
+(d)
+
+Figure 2: Skill and query length statistics. (a) Distribution of document length across all 17,810 skills.
+(b) Box plots of document length by major category. (c) Query length distributions for the evaluation
+set and training set. (d) Distribution of k (number of skills per query) in each split; training queries
+are sampled uniformly across k, whereas evaluation queries are concentrated on k=1 and k=2.
+4.2
+
+Skill & Taxonomy Statistics
+
+Each skill is represented as the composite text name | description | skill_md, which is the
+actual retrieval target used by all models in our evaluation. The skill_md component contains the
+full Markdown body including instructions, decision logic, usage constraints, and implementation
+details. Measured in cl100k_base tokens, this composite text has a median length of 1,583 tokens
+(mean 2,083; 95th percentile 5,531; max 47,412), resulting in approximately 37.1 M tokens across
+the corpus (Fig. 2 (a)). This is an order of magnitude longer than typical tool descriptions in existing
+benchmarks [25], making skill retrieval a fundamentally long-document matching problem. Fig. 2 (b)
+shows the per-Major length distributions. Data & ML skills are the longest (median 1,795 tokens).
+Information Retrieval skills are the shortest, reflecting their comparatively concise search-oriented
+instructions.
+4.3
+
+Query Statistics
+
+We further summarize the key distributional properties of the generated queries across the training
+and evaluation splits. In Fig. 2(c), evaluation queries, generated by Claude Opus 4.6, are substantially
+longer than training queries generated by Qwen3.5-122B-A10B [23], with a median length of 170
+words versus 72 words and a 95th percentile of 270 versus 108 words. This difference likely reflects
+generation style across the two model families, where Opus 4.6 tends to produce more detailed,
+scenario-rich requests, making evaluation queries inherently more challenging for lexical matching
+methods. In terms of the number of required skills per query, training queries are distributed uniformly
+across k ∈ {1, 2, 3}, whereas evaluation queries are concentrated on lower values of k, with 46%
+single-skill queries, 40% two-skill queries, and 13% three-skill queries (Fig. 2(d)). Notably, multiskill queries (k ≥ 2) still account for the majority of the evaluation set (54%), requiring retrievers to
+jointly identify multiple relevant skills rather than simply retrieving a single best match.
+
+5
+
+Evaluation
+
+5.1
+
+Experimental Setup
+
+Setup. We adopt a two-stage retrieve-then-rerank pipeline where an embedding model retrieves the
+top-k candidates via cosine similarity and a reranker re-scores each query–candidate pair. Larger
+k yields better coverage but increases reranking cost. We evaluate k ∈ {10, 20, 50} and set k=20
+considering the trade-off between retrieval quality and computational cost. Ablation results are in
+Appendix D. Encoding the full document text, including the name, description, and Markdown body,
+consistently outperforms encoding name and description only, as shown in Appendix E. We therefore
+encode each document up to the model’s maximum sequence length for all experiments, with permodel limits listed in Appendix F. We use each model’s officially recommended prompts. Only the
+Harrier, Qwen3-Embedding, and Qwen3-Reranker families have their default web-search instruction
+replaced with a skill-retrieval instruction we authored. Full specifications are in Appendix G.
+Models. For embedding, we evaluate 18 models across three categories, including a sparse baseline
+BM25, encoder-only models, and decoder-only models, covering sub-100M to 12B parameters with
+6
+
+Table 3: Embedding retrieval results on S KILL R ET. Models are grouped by architecture type. BM25
+is included as a sparse baseline. Best result per metric is bolded.
+NDCG
+Type
+
+Model
+
+Sparse baseline
+BM25 [24]
+
+Recall
+
+Completeness
+
+Params
+
+@5
+
+@10
+
+@15
+
+@5
+
+@10
+
+@15
+
+@5
+
+@10
+
+@15
+
+–
+
+46.47
+
+48.86
+
+49.90
+
+50.09
+
+56.55
+
+59.95
+
+34.96
+
+41.09
+
+44.27
+
+Encoder-only
+bge-small-en-v1.5 [32]
+snowflake-arctic-embed-s [20]
+e5-small-v2 [28]
+e5-large-v2 [28]
+bge-large-en-v1.5 [32]
+
+33M
+33M
+118M
+335M
+335M
+
+49.62
+51.01
+39.83
+48.01
+53.75
+
+51.68
+52.99
+41.82
+50.21
+55.82
+
+52.58
+53.93
+42.89
+51.28
+56.71
+
+51.90
+53.61
+43.22
+51.51
+55.96
+
+57.47
+58.84
+48.65
+57.42
+61.40
+
+60.41
+61.84
+52.18
+60.86
+64.31
+
+35.72
+37.74
+29.74
+36.54
+39.30
+
+40.72
+42.48
+34.02
+41.95
+44.63
+
+43.59
+45.35
+37.08
+45.17
+47.49
+
+Decoder-only
+F2LLM-v2-80M [35]
+harrier-oss-v1-270m [8]
+pplx-embed-v1-0.6b [5]
+Qwen3-Embedding-0.6B [34]
+harrier-oss-v1-0.6b [8]
+jina-embeddings-v5-text-small [1]
+NV-Embed-v1 [15]
+Qwen3-Embedding-8B [34]
+Octen-Embedding-8B [26]
+KaLM-Gemma3-12B [36]
+SkillRouter-Embedding-0.6B [37]
+SkillRet-Embedding-0.6B (ours)
+SkillRet-Embedding-8B (ours)
+
+80M
+270M
+0.6B
+0.6B
+0.6B
+0.6B
+7B
+8B
+8B
+12B
+0.6B
+0.6B
+8B
+
+43.32
+58.83
+48.11
+56.23
+64.24
+57.21
+50.71
+57.57
+60.35
+52.68
+68.39
+75.57
+81.23
+
+45.52
+61.17
+50.72
+58.35
+66.55
+59.50
+53.12
+59.98
+62.56
+55.38
+70.38
+78.03
+83.45
+
+46.54
+62.12
+52.16
+59.34
+67.54
+60.44
+54.21
+61.05
+63.44
+56.67
+71.22
+78.87
+84.18
+
+46.29
+61.44
+53.04
+59.29
+67.06
+59.74
+54.47
+60.71
+62.38
+56.75
+70.50
+79.15
+85.58
+
+52.24
+67.61
+60.03
+64.89
+73.09
+65.77
+60.96
+67.06
+68.17
+63.94
+75.63
+85.42
+91.23
+
+55.59
+70.71
+64.75
+68.06
+76.27
+68.78
+64.50
+70.45
+70.99
+68.14
+78.28
+88.09
+93.55
+
+31.28
+44.59
+37.38
+41.98
+50.57
+42.57
+38.38
+43.33
+44.89
+40.32
+52.79
+65.96
+75.62
+
+36.66
+51.11
+44.07
+47.27
+57.37
+49.03
+43.87
+50.01
+51.31
+47.85
+59.04
+75.09
+84.63
+
+39.74
+54.39
+48.57
+50.31
+61.12
+52.33
+47.05
+53.69
+54.65
+52.31
+62.26
+79.03
+88.41
+
+16 off-the-shelf and 2 fine-tuned models. The full list is in Table 3. For reranking, we evaluate
+jina-reranker-v2-base-multilingual [13] and the Qwen3-Reranker [34] family at scales 0.6B, 4B,
+and 8B. We also include SkillRouter-Embedding-0.6B [37] and SkillRouter-Reranker-0.6B [37] as
+external fine-tuned baselines, evaluated using the publicly released checkpoints on HuggingFace.
+We refer to all models fine-tuned on S KILL R ET training data collectively as the S KILL R ET model
+family, comprising SkillRet-Embedding-0.6B, SkillRet-Embedding-8B, and SkillRet-Reranker-0.6B.
+Although Harrier-OSS outperforms Qwen3-Embedding off-the-shelf, we use Qwen3-Embedding as
+our fine-tuning base because Harrier is itself a fine-tuned derivative of Qwen3-Embedding. We verify
+that fine-tuning from either base yields comparable results in Appendix H.
+Training details. We fine-tune Qwen3-Embedding-0.6B and Qwen3-Embedding-8B using MultipleNegativesRankingLoss with in-batch negatives on 127,190 positive query–skill pairs derived from
+the training split. SkillRet-Reranker-0.6B is fine-tuned from Qwen3-Reranker-0.6B using binary
+cross-entropy on the yes/no token probability at the final decoding position. Hard negatives are mined
+with the fine-tuned SkillRet-Embedding-0.6B retriever. Full hyperparameters are in Appendix I.
+Evaluation metrics. We report three metrics at k ∈ {5, 10, 15}: NDCG@k [10] measures ranking
+quality, Recall@k measures the fraction of ground-truth skills retrieved, and Completeness@k [22]
+measures the fraction of queries where all ground-truth skills are retrieved, i.e., Recall@k = 1.
+All evaluations are run on a single NVIDIA B200 GPU (180 GB VRAM) per model to ensure
+reproducibility.
+5.2
+
+Experimental Results
+
+Embedding Retrieval. Table 3 reports the retrieval performance of all evaluated models on
+the S KILL R ET benchmark. The best encoder-only model, bge-large-en-v1.5 [32], reaches 55.82
+NDCG@10, setting a ceiling that decoder-only models consistently surpass. Decoder-only models
+support maximum sequence lengths of 8K–32K tokens, far exceeding the 512-token limit of encoderonly models, and can thus encode full skill documents without truncation. harrier-oss-v1-0.6b [8]
+reaches 66.55 NDCG@10, a gap of 10.7 points over the encoder-only ceiling. Within decoder-only
+models, however, larger parameter counts do not guarantee better performance: NV-Embed-v1 [15] at
+7B scores only 53.12, well below harrier-oss-v1-270m [8] at 61.17, and KaLM-Gemma3-12B [36] at
+12B achieves only 55.38, lower than several 0.6B and 8B models. These inversions suggest that model
+scale alone is insufficient. What matters more is whether a model has been trained on domain-relevant
+data. Fine-tuning directly validates this. SkillRouter-Embedding-0.6B [37], a publicly released model
+fine-tuned, already surpasses all off-the-shelf models at 70.38 NDCG@10. Our SkillRet models push
+7
+
+Table 4: Reranking results on S KILL R ET with top-20 candidates. Best result per first-stage model is
+bolded.
+NDCG
+
+Recall
+
+Completeness
+
+First-stage Model
+
+Reranker
+
+@5
+
+@10
+
+@15
+
+@5
+
+@10
+
+@15
+
+@5
+
+@10
+
+@15
+
+SkillRet-Embedding-0.6B (ours)
+
+Embed only
+jina-reranker-v2 [13]
+Qwen3-Reranker-0.6B [34]
+Qwen3-Reranker-4B [34]
+Qwen3-Reranker-8B [34]
+SkillRouter-Reranker-0.6B [37]
+SkillRet-Reranker-0.6B (ours)
+
+75.57
+69.92
+72.84
+73.24
+73.21
+79.98
+80.71
+
+78.03
+73.14
+75.81
+76.20
+76.09
+81.85
+82.18
+
+78.87
+74.36
+76.68
+77.12
+76.92
+82.37
+82.66
+
+79.15
+75.51
+78.23
+78.58
+79.12
+82.85
+83.73
+
+85.42
+83.93
+85.86
+86.18
+86.48
+87.64
+87.61
+
+88.09
+87.83
+88.57
+89.04
+89.07
+89.24
+89.20
+
+65.96
+61.60
+64.72
+65.52
+66.40
+70.66
+73.28
+
+75.09
+73.06
+75.48
+76.09
+76.53
+78.15
+78.95
+
+79.03
+78.99
+79.93
+80.47
+80.67
+80.75
+81.09
+
+SkillRet-Embedding-8B (ours)
+
+Embed only
+jina-reranker-v2 [13]
+Qwen3-Reranker-0.6B [34]
+Qwen3-Reranker-4B [34]
+Qwen3-Reranker-8B [34]
+SkillRouter-Reranker-0.6B [37]
+SkillRet-Reranker-0.6B (ours)
+
+81.23
+70.67
+73.75
+74.04
+73.88
+81.49
+82.23
+
+83.45
+74.56
+77.36
+77.53
+77.28
+83.89
+84.22
+
+84.18
+76.19
+78.57
+78.78
+78.58
+84.67
+85.00
+
+85.58
+76.57
+79.52
+80.19
+80.55
+85.03
+85.78
+
+91.23
+86.67
+88.76
+89.11
+89.17
+91.16
+91.00
+
+93.55
+91.83
+92.51
+92.95
+93.16
+93.53
+93.57
+
+75.62
+62.82
+66.18
+67.64
+68.16
+74.14
+77.05
+
+84.63
+77.09
+80.19
+80.83
+81.17
+84.03
+84.99
+
+88.41
+85.47
+86.67
+87.13
+87.59
+88.15
+88.77
+
+further still. SkillRet-Embedding-0.6B reaches 78.03, outperforming SkillRouter-Embedding-0.6B
+by 7.7 points, and SkillRet-Embedding-8B reaches 83.45, a gain of 16.9 points over the strongest
+off-the-shelf model, confirming that domain-specific fine-tuning is the dominant factor for skill
+retrieval performance.
+Reranking. Table 4 reports results before and after reranking for the top-20 candidates returned by
+each first-stage retriever. Off-the-shelf rerankers consistently decrease NDCG@10 for the SkillRet
+embedding models, suggesting domain mismatch where a general-purpose reranker may override correct results from an already task-specialized retriever. Qwen3-Reranker variants at 0.6B, 4B, and 8B
+converge to a similar performance level, suggesting they are bounded by domain coverage rather than
+scale. SkillRet-Reranker-0.6B breaks through this via domain-specific fine-tuning, with gains proportional to first-stage headroom. It improves SkillRet-Embedding-0.6B by 4.15 NDCG@10 points,
+from 78.03 to 82.18, where headroom remains, but yields a smaller gain for SkillRet-Embedding-8B
+near the performance ceiling, from 83.45 to 84.22. SkillRet-Reranker-0.6B performs on par with
+SkillRouter-Reranker-0.6B [37] across all first-stage models, despite being independently fine-tuned.
+This convergence suggests both models have reached a performance ceiling imposed by the current
+benchmark and training data.
+5.3
+
+Analysis
+
+Training effect: skill-relevant sentence focus. Fine-tuned models substantially outperform their
+base counterparts, as shown in Table 3, but why does training help? We hypothesize that fine-tuning
+does not simply improve overall query encoding, but instead sharpens the model’s focus on the
+small subset of sentences within a query that directly signals skill intent. Skill queries are typically
+long, scenario-rich requests in which only a few sentences carry the actionable capability signal. The
+remainder consists of background context, output requirements, and constraints largely orthogonal to
+skill selection. A base model may distribute attention broadly across all sentences, while a fine-tuned
+model learns via retrieval supervision to prioritize the sentences that most directly determine which
+skill is needed.
+To test this, we conduct a sentence erasure analysis [3, 18] Table 5: Effect of masking important
+on the 2,319 single-skill evaluation queries. For each sen- query snippets on retrieval performance
+tence si in query q, we replace it with [MASK], re-encode (NDCG@10).
+the masked query q\si , and compute importance(si ) =
+Base
+Trained
+sim(q, d+ ) − sim(q\si , d+ ). We then mask the top-k Condition
+most important sentences and re-run retrieval, with results Full query
+73.41
+80.89
+shown in Table 5. On the full query, the trained model mask_top_1 56.34 (-23.3%) 57.29 (-29.2%)
+outperforms the base model by 7.5 NDCG@10 points, mask_top_2 40.39 (-45.0%) 38.92 (-51.9%)
+yet removing the single most important sentence causes mask_top_3 26.66 (-63.7%) 24.00 (-70.3%)
+a larger performance drop. This suggests that the trained
+model concentrates its retrieval signal on a small set of skill-relevant sentences, whereas the base
+model relies more diffusely on information spread across the entire query. A qualitative visualization
+of this pattern is shown in Fig. 6 in Appendix L.
+8
+
+70
+
+Encoder-only (bidirectional)
+Decoder-only (causal LM)
+
+Harrier-OSS-v1-0.6B
+
+SkillRet NDCG@10
+
+65
+
+Octen-Embedding-8B
+Harrier-OSS-v1-270M
+Qwen3-Embedding-0.6B Jina-Embeddings-v5-Text-S
+60
+BGE-Large-EN-v1.5
+Qwen3-Embedding-8B
+BGE-Small-EN-v1.5
+Snowflake-Arctic-Embed-S
+55
+KaLM-Embedding-Gemma3-12B
+
+50
+45
+40
+
+NV-Embed-v1
+E5-Large-v2
+
+E5-Small-v2
+
+40
+
+F2LLM-v2-80M
+
+50
+
+60
+
+PPLX-Embed-v1-0.6B
+
+70
+
+80
+
+MTEB Retrieval Score
+Figure 3: MTEB Retrieval score vs. S KILL R ET. Circle size is proportional to parameter count.
+
+Table 6: Per-Major category NDCG@10
+for Qwen3-Embedding (Base) and SkillRetEmbedding (Ours). Categories ordered by difficulty (hardest first).
+0.6B
+Major
+
+∆
+
+Base Ours Base Ours 0.6B
+
+Info. Retr.
+25.1
+AI Agents
+28.3
+Bus. & Plan. 38.1
+Content Cr.
+40.0
+Software Eng. 58.3
+Data & ML
+69.0
+Overall
+
+8B
+
+57.1
+51.2
+66.6
+72.5
+73.4
+78.3
+
+22.8
+26.3
+38.2
+42.6
+61.3
+70.5
+
+62.8
+58.8
+71.5
+75.0
+78.8
+80.9
+
+8B
+
++32.0 +40.0
++22.9 +32.6
++28.5 +33.3
++32.5 +32.4
++15.2 +17.4
++9.3 +10.4
+
+58.3 78.0 60.0 83.5 +19.7 +23.5
+
+MTEB Retrieval ranking does not predict skill retrieval performance. Figure 3 plots MTEB
+Retrieval score [9] against S KILL R ET NDCG@10. MTEB Retrieval score shows a moderate positive
+correlation at Spearman ρ = 0.71, yet ranking inversions are common, with models that score highly
+on MTEB often underperforming on S KILL R ET, and vice versa. These inversions suggest that skill
+retrieval demands a form of query understanding distinct from general semantic matching, requiring
+models to identify specific capability signals within long, multi-sentence queries. Task-specific finetuning, as demonstrated by the SkillRet model family, is the most effective way to bridge this gap.
+Full scores and detailed examples are in Appendix J.
+Per-category performance. Table 6 breaks down NDCG@10 by the six Major categories. The
+SkillRet models improve substantially over the Qwen3-Embedding baselines across every category,
+with gains ranging from +10.4 pp to +40.0 pp for the 8B variant. Despite these gains, the difficulty
+ordering is stable across all four configurations: Information Retrieval and AI Agents consistently
+score lowest, and a 16 pp gap between the easiest and hardest categories persists even for SkillRetEmbedding-8B. This category-level disparity is invisible to the aggregate NDCG@10 of 83.5 and
+can only be surfaced through the taxonomy-based stratification. Finer-grained Sub-category results
+(Appendix K) expose within-Major variance of up to 17.9 pp, further confirming the taxonomy’s
+value as a diagnostic tool for pinpointing retrieval bottlenecks.
+
+6
+
+Limitations
+
+S KILL R ET has two main limitations. First, S KILL R ET queries are designed to resemble realistic user
+requests but are synthetically generated rather than collected from live agent interactions. Thus, the
+evaluation set may under-represent terse, underspecified, conversational, or user-context-dependent
+requests common in real deployments. We mitigate this with GAIA-style seed examples, skill-name
+leakage filtering, and query–skill validation, but bridging synthetic benchmarks with real agent traffic
+remains important future work. Second, S KILL R ET evaluates retrieval quality in isolation and does
+not measure downstream task success or end-to-end agent performance. Higher NDCG@10 does not
+necessarily imply better skill use, since retrieved skills must still be selected, composed, interpreted,
+and executed under practical context and latency constraints. We leave the joint study of skill retrieval
+and downstream execution to future work.
+
+7
+
+Conclusion
+
+We introduced S KILL R ET, a large-scale benchmark for skill retrieval in LLM agents, built from 17,810
+curated public skills with a two-level taxonomy of 6 Major and 18 Sub-categories, 4,997 evaluation
+queries, and a matched training pool of 63,259 queries. Unlike prior tool retrieval benchmarks,
+SkillRet targets long-form, compositional skill documents, where the relevant signal must be matched
+against a small actionable portion of the user query. Across various embedding models, The strongest
+off-the-shelf retriever reaches 0.665 NDCG@10, while the strongest prior skill-retrieval model
+reaches 0.704. Domain-specific fine-tuning on S KILL R ET lifts NDCG@10 to 0.835, corresponding
+to a +13.1-point gain over the strongest prior retriever and a +16.9-point gain over the strongest
+off-the-shelf retriever. These results position skill retrieval as a distinct long-document matching
+9
+
+problem and establish SkillRet as a foundation for retrieval-oriented training and benchmarking in
+future agent systems.
+
+Acklowdege
+We sincerely thank Hyojung Han and Seunghun Jeon for their helpful discussions during the early
+stages of this project.
+
+References
+[1] Mohammad Kalim Akram, Saba Sturua, Nastia Havriushenko, Quentin Herreros, Michael
+Günther, Maximilian Werk, and Han Xiao. jina-embeddings-v5-text: Task-targeted embedding
+distillation. arXiv preprint arXiv:2602.15547, 2026.
+[2] Anthropic. Claude opus 4.6. https://www.anthropic.com/claude, 2026.
+[3] Oren Barkan, Yonatan Toib, Yehonatan Elisha, Jonathan Weill, and Noam Koenigstein. Llm
+explainability via attributive masking learning. In Findings of the Association for Computational
+Linguistics: EMNLP 2024, pages 9522–9537, 2024.
+[4] Yin Cui, Menglin Jia, Tsung-Yi Lin, Yang Song, and Serge Belongie. Class-balanced loss based
+on effective number of samples. In Proceedings of the IEEE/CVF conference on computer
+vision and pattern recognition, pages 9268–9277, 2019.
+[5] Sedigheh Eslami, Maksim Gaiduk, Markus Krimmel, Louis Milliken, Bo Wang, and
+Denis Bykov. Diffusion-pretrained dense and contextual embeddings. arXiv preprint
+arXiv:2602.11151, 2026.
+[6] Fabrizio Gilardi, Meysam Alizadeh, and Maël Kubli. Chatgpt outperforms crowd workers for
+text-annotation tasks. Proceedings of the National Academy of Sciences, 120(30):e2305016120,
+2023.
+[7] Tingxu Han, Yi Zhang, Wei Song, Chunrong Fang, Zhenyu Chen, Youcheng Sun, and Lijie
+Hu. Swe-skills-bench: Do agent skills actually help in real-world software engineering? arXiv
+preprint arXiv:2603.15401, 2026.
+[8] Aolong Huang, Liang Wang, Furu Wei, et al. Harrier-oss-v1. https://huggingface.co/
+microsoft/harrier-oss-v1-0.6b, 2026.
+[9] Hugging Face.
+MTEB leaderboard.
+leaderboard, 2026.
+
+https://huggingface.co/spaces/mteb/
+
+[10] Kalervo Järvelin and Jaana Kekäläinen. Cumulated gain-based evaluation of ir techniques. ACM
+Transactions on Information Systems (TOIS), 20(4):422–446, 2002.
+[11] Guanyu Jiang, Zhaochen Su, Xiaoye Qu, and Yi R. Fung. Xskill: Continual learning from
+experience and skills in multimodal agents. arXiv preprint arXiv:2603.12056, 2026.
+[12] Yanna Jiang, Delong Li, Haiyu Deng, Baihe Ma, Xu Wang, Qin Wang, and Guangsheng Yu.
+Sok: Agentic skills–beyond tool use in llm agents. arXiv preprint arXiv:2602.20867, 2026.
+[13] Jina AI.
+jina-reranker-v2-base-multilingual.
+jina-reranker-v2-base-multilingual, 2024.
+
+https://huggingface.co/jinaai/
+
+[14] Bingyi Kang, Saining Xie, Marcus Rohrbach, Zhicheng Yan, Albert Gordo, Jiashi Feng, and
+Yannis Kalantidis. Decoupling representation and classifier for long-tailed recognition. arXiv
+preprint arXiv:1910.09217, 2019.
+[15] Chankyu Lee, Rajarshi Roy, Mengyao Xu, Jonathan Raiman, Mohammad Shoeybi, Bryan
+Catanzaro, and Wei Ping. Nv-embed: Improved techniques for training llms as generalist
+embedding models. arXiv preprint arXiv:2405.17428, 2024.
+10
+
+[16] Fangzhou Li, Pagkratios Tagkopoulos, and Ilias Tagkopoulos. Skillflow: Scalable and efficient
+agent skill retrieval system. arXiv e-prints, pages arXiv–2504, 2025.
+[17] Hao Li, Chunjiang Mu, Jianhao Chen, Siyue Ren, Zhiyao Cui, Yiqun Zhang, Lei Bai, and
+Shuyue Hu. Organizing, orchestrating, and benchmarking agent skills at ecosystem scale. arXiv
+preprint arXiv:2603.02176, 2026.
+[18] Jiwei Li, Will Monroe, and Dan Jurafsky. Understanding neural networks through representation
+erasure. arXiv preprint arXiv:1612.08220, 2016.
+[19] Xiangyi Li, Wenbo Chen, Yimin Liu, Shenghan Zheng, Xiaokun Chen, Yifeng He, Yubo Li,
+Bingran You, Haotian Shen, Jiankai Sun, Shuyi Wang, Binxu Li, Qunhong Zeng, Di Wang,
+Xuandong Zhao, Yuanli Wang, Roey Ben Chaim, Zonglin Di, Yipeng Gao, Junwei He, Yizhuo
+He, Liqiang Jing, Luyang Kong, Xin Lan, Jiachen Li, Songlin Li, Yijiang Li, Yueqian Lin, Xinyi
+Liu, Xuanqing Liu, Haoran Lyu, Ze Ma, Bowei Wang, Runhui Wang, Tianyu Wang, Wengao
+Ye, Yue Zhang, Hanwen Xing, Yiqi Xue, Steven Dillmann, and Han-chung Lee. Skillsbench:
+Benchmarking how well agent skills work across diverse tasks. arXiv preprint arXiv:2602.12670,
+2026.
+[20] Luke Merrick, Danmei Xu, Gaurav Nuti, and Daniel Campos. Arctic-embed: Scalable, efficient,
+and accurate text embedding models. arXiv preprint arXiv:2405.05374, 2024.
+[21] Grégoire Mialon, Clémentine Fourrier, Thomas Wolf, Yann LeCun, and Thomas Scialom.
+GAIA: a benchmark for general AI assistants. In The Twelfth International Conference on
+Learning Representations, 2024.
+[22] Changle Qu, Sunhao Dai, Xiaochi Wei, Hengyi Cai, Shuaiqiang Wang, Dawei Yin, Jun Xu,
+and Ji-Rong Wen. Towards completeness-oriented tool retrieval for large language models.
+In Proceedings of the 33rd ACM International Conference on Information and Knowledge
+Management, pages 1930–1940, 2024.
+[23] Qwen Team. Qwen3.5. https://qwen.ai/blog?id=qwen3.5, 2026. Accessed: 2026-04-22.
+[24] Stephen E Robertson and Steve Walker. Some simple effective approximations to the 2-poisson
+model for probabilistic weighted retrieval. In SIGIR’94: Proceedings of the Seventeenth Annual
+International ACM-SIGIR Conference on Research and Development in Information Retrieval,
+organised by Dublin City University, pages 232–241. Springer, 1994.
+[25] Zhengliang Shi, Yuhan Wang, Lingyong Yan, Pengjie Ren, Shuaiqiang Wang, Dawei Yin,
+and Zhaochun Ren. Retrieval models aren’t tool-savvy: Benchmarking tool retrieval for large
+language models. arXiv preprint arXiv:2503.01763, 2025.
+[26] Octen Team. Octen series: Optimizing embedding models to #1 on rteb leaderboard, 2025.
+[27] Guanzhi Wang, Yuqi Xie, Yunfan Jiang, Ajay Mandlekar, Chaowei Xiao, Yuke Zhu, Linxi Fan,
+and Anima Anandkumar. Voyager: An open-ended embodied agent with large language models.
+arXiv preprint arXiv:2305.16291, 2023.
+[28] Liang Wang, Nan Yang, Xiaolong Huang, Binxing Jiao, Linjun Yang, Daxin Jiang, Rangan
+Majumder, and Furu Wei. Text embeddings by weakly-supervised contrastive pre-training.
+arXiv preprint arXiv:2212.03533, 2022.
+[29] Yizhong Wang, Yeganeh Kordi, Swaroop Mishra, Alisa Liu, Noah A Smith, Daniel Khashabi,
+and Hannaneh Hajishirzi. Self-instruct: Aligning language models with self-generated instructions. In Proceedings of the 61st annual meeting of the association for computational linguistics
+(volume 1: long papers), pages 13484–13508, 2023.
+[30] Zhaoyang Wang, Qianhui Wu, Xuchao Zhang, Chaoyun Zhang, Wenlin Yao, Fazle Elahi Faisal,
+Baolin Peng, Si Qin, Suman Nath, Qingwei Lin, Chetan Bansal, Dongmei Zhang, Saravan
+Rajmohan, Jianfeng Gao, and Huaxiu Yao. Webxskill: Skill learning for autonomous web
+agents. arXiv preprint arXiv:2604.13318, 2026.
+11
+
+[31] Peng Xia, Jianwen Chen, Xinyu Yang, Haoqin Tu, Jiaqi Liu, Kaiwen Xiong, Siwei Han, Shi
+Qiu, Haonian Ji, Yuyin Zhou, Zeyu Zheng, Cihang Xie, and Huaxiu Yao. Metaclaw: Just talk –
+an agent that meta-learns and evolves in the wild. arXiv preprint arXiv:2603.17187, 2026.
+[32] Shitao Xiao, Zheng Liu, Peitian Zhang, Niklas Muennighoff, Defu Lian, and Jian-Yun Nie. Cpack: Packed resources for general chinese embeddings. In Proceedings of the 47th international
+ACM SIGIR conference on research and development in information retrieval, pages 641–649,
+2024.
+[33] Renjun Xu and Yang Yan. Agent skills for large language models: Architecture, acquisition,
+security, and the path forward. arXiv preprint arXiv:2602.12430, 2026.
+[34] Yanzhao Zhang, Mingxin Li, Dingkun Long, Xin Zhang, Huan Lin, Baosong Yang, Pengjun
+Xie, An Yang, Dayiheng Liu, Junyang Lin, et al. Qwen3 embedding: Advancing text embedding
+and reranking through foundation models. arXiv preprint arXiv:2506.05176, 2025.
+[35] Ziyin Zhang, Zihan Liao, Hang Yu, Peng Di, and Rui Wang. F2llm-v2: Inclusive, performant,
+and efficient embeddings for a multilingual world. arXiv preprint arXiv:2603.19223, 2026.
+[36] Xinping Zhao, Xinshuo Hu, Zifei Shan, Shouzheng Huang, Yao Zhou, Xin Zhang, Zetian
+Sun, Zhenyu Liu, Dongfang Li, Xinyuan Wei, et al. Kalm-embedding-v2: Superior training
+techniques and data inspire a versatile embedding model. arXiv preprint arXiv:2506.20923,
+2025.
+[37] YanZhao Zheng, ZhenTao Zhang, Chao Ma, YuanQiang Yu, JiHuan Zhu, Baohua Dong,
+and Hangcheng Zhu. Skillrouter: Skill routing for llm agents at scale. arXiv preprint
+arXiv:2603.22455, 2026.
+[38] Huichi Zhou, Siyuan Guo, Anjie Liu, Zhongwei Yu, Ziqin Gong, Bowen Zhao, Zhixun Chen,
+Menglong Zhang, Yihang Chen, Jinsong Li, et al. Memento-skills: Let agents design agents.
+arXiv preprint arXiv:2603.18743, 2026.
+[39] Caleb Ziems, William Held, Omar Shaikh, Jiaao Chen, Zhehao Zhang, and Diyi Yang. Can
+large language models transform computational social science? Computational Linguistics,
+50(1):237–291, 2024.
+
+12
+
+Appendix
+A
+
+Data, code, and model.
+
+We release S KILL R ET publicly at https://huggingface.co/datasets/ThakiCloud/
+SKILLRET. Code is available at https://github.com/ThakiCloud/SKILLRET. Pretrained model weights are also publicly released: SkillRet-Embedding-0.6B at https:
+//huggingface.co/ThakiCloud/SKILLRET-Embedding-0.6B and SkillRet-Embedding8B at https://huggingface.co/ThakiCloud/SKILLRET-Embedding-8B. The dataset is
+derived from public GitHub-hosted skills and synthetic queries; it is intended for skill retrieval
+evaluation and model development, not for profiling individual authors, inferring personal attributes,
+or certifying end-to-end agent safety.
+
+B
+
+Dataset Construction Details
+
+This appendix provides supporting details for the SkillRet skill library summarized in Section 3
+and the taxonomy presented in Section 4: the per-step filtering attrition (§B.1), the two-pass LLM
+tagging procedure (§B.2), consensus clustering over action–object combinations (§B.3), the iterative
+taxonomy design process (§B.4), LLM-based skill assignment (§B.5), and human validation (§B.6).
+B.1
+
+Per-Step Filtering Attrition
+
+Table 7 reports the per-step attrition of the five-stage filtering pipeline described in §3.1. The two
+largest reductions come from content deduplication (Step 4) and language filtering (Step 2).
+Table 7: Quality filtering pipeline. The largest reductions come from content deduplication (Step 4)
+and language filtering (Step 2).
+Step
+
+Filter
+
+–
+Raw corpus
+Phase 1: Content eligibility
+1
+Description recovery / pruning
+2
+Language filter (> 3% non-Latin)
+3
+License filter + propagated cleanup
+Phase 2: Deduplication
+4
+Content deduplication (normalized hash)
+5
+Search-target deduplication (name+desc)
+
+B.2
+
+Removed
+
+Remaining
+
+–
+
+22,795
+
+3
+1,319
+1,249
+
+22,792
+21,473
+20,224
+
+1,547
+867
+
+18,677
+17,810
+
+Structured Tagging
+
+To characterize each skill along interpretable dimensions, we assign three structured tags per skill:
+primary_action (what the skill does), primary_object (what the skill acts on), and domain (the
+technical field it belongs to). We use a two-pass procedure with Claude Sonnet 4.6.
+B.2.1
+
+Pass 1: Category Discovery
+
+All 17,810 skill names with truncated descriptions (100 characters) are submitted in a single prompt.
+The model is instructed to discover natural, non-overlapping categories for each dimension at an
+appropriate granularity (roughly 8–15 categories). This yields 13 actions, 14 objects, and 13 domains.
+The categories are discovered by the LLM from the corpus rather than being predefined by the authors,
+though the target granularity (8–15 per dimension) is specified in the prompt. The resulting label
+sets were manually reviewed by the authors to verify semantic coherence and adjust ambiguous or
+overlapping categories.
+System prompt.
+You are a skill taxonomy analyst. You will receive a list
+of ~17,000 AI coding skill names with short descriptions.
+
+13
+
+Your task: analyze ALL skills and discover the natural
+categories that exist across three dimensions.
+For each dimension, identify **distinct, non-overlapping
+categories** at an appropriate granularity level (roughly
+8-15 categories per dimension). Each category should have
+a short lowercase label (1-2 words, snake_case) and a
+brief description.
+Dimensions:
+1. **primary_action**: What the skill DOES
+(the core verb/activity)
+2. **primary_object**: What the skill acts ON
+(the target/subject)
+3. **domain**: What technical field the skill belongs to
+Output strict JSON with this structure:
+{
+"primary_action": [
+{"label": "...", "description": "..."}
+],
+"primary_object": [
+{"label": "...", "description": "..."}
+],
+"domain": [
+{"label": "...", "description": "..."}
+]
+}
+No markdown fences, no explanations outside the JSON.
+
+User message format.
+Here are all the skills:
+{skill_name_1}: {description_first_100_chars}
+{skill_name_2}: {description_first_100_chars}
+...
+{skill_name_17810}: {description_first_100_chars}
+
+B.2.2
+
+Pass 2: Batch Classification
+
+The discovered categories are injected into the system prompt as a closed label set. Skills are then
+classified in batches of 100, with the model selecting exactly one label per dimension for each skill.
+The output is a structured JSON record per skill. After deduplication of any double-tagged entries,
+we obtain a clean set of 17,810 (id, action, object, domain) tuples.
+System prompt.
+You are a skill taxonomy classifier. For each AI coding
+skill, assign exactly 3 labels.
+**primary_action** -- choose ONE from:
+- implement: Writing, building, or creating new code,
+features, components, or systems
+- debug: Finding, diagnosing, and fixing bugs, errors,
+or unexpected behavior
+- review: Evaluating, auditing, or assessing code,
+documentation, or designs for quality
+- test: Writing, running, or managing automated tests
+and test strategies
+- design: Architecting systems, designing APIs,
+planning schemas, or defining specifications
+- document: Creating, updating, or generating
+documentation, comments, or explanations
+
+14
+
+- refactor: Restructuring or improving existing code
+without changing behavior
+- configure: Setting up, installing, or configuring
+tools, environments, or services
+- deploy: Building, packaging, releasing, or deploying
+software to environments
+- analyze: Investigating, researching, profiling, or
+extracting insights from code or data
+- generate: Producing artifacts like images, content,
+reports, or boilerplate automatically
+- orchestrate: Coordinating, routing, or managing
+multiple agents, tasks, or workflows
+- search: Finding, discovering, or retrieving
+information from code, docs, or the web
+**primary_object** -- choose ONE from:
+- code: Source code files, functions, classes, modules
+- api: REST, GraphQL, gRPC interfaces and endpoints
+- database: Database schemas, queries, migrations
+- ui_component: Frontend components, pages, layouts
+- test_suite: Unit tests, integration tests, E2E tests
+- documentation: READMEs, API docs, guides, changelogs
+- pipeline: CI/CD pipelines, data pipelines, build
+workflows
+- infrastructure: Cloud resources, containers, K8s,
+and infrastructure-as-code
+- agent_skill: AI agent skills, prompts, system
+prompts, and LLM configurations
+- data: Datasets, data files, spreadsheets, reports
+- project: Entire projects, repositories, codebases
+- dependency: Packages, libraries, version management
+- security: Vulnerabilities, authentication, secrets
+- content: Text content, blog posts, marketing copy
+**domain** -- choose ONE from:
+- web_frontend: Browser-based UI development (React,
+Vue, Angular, HTML/CSS)
+- backend_api: Server-side development, REST/GraphQL
+APIs, microservices
+- devops_infra: CI/CD, cloud infrastructure,
+containers, Kubernetes
+- data_ml: Data engineering, machine learning, AI
+model training, analytics
+- mobile: iOS, Android, cross-platform mobile apps
+- security: Application security, penetration testing,
+vulnerability management
+- database: Relational and NoSQL databases, query
+optimization
+- ai_agents: LLM applications, agent frameworks, RAG
+systems, prompt engineering
+- developer_tools: CLI tools, IDE extensions, code
+generation, developer productivity
+- testing_qa: Test automation, quality assurance
+- product_design: UI/UX design, product management,
+user research
+- systems: Operating systems, embedded systems,
+compilers
+- business_ops: Project management, marketing, sales,
+finance, legal
+Respond ONLY with a JSON array. Each element:
+{"id": "...", "primary_action": "...",
+"primary_object": "...", "domain": "..."}.
+No explanations, no markdown fences.
+
+15
+
+Table 8: Consensus clustering: 10 stable groups (threshold = 5/5). Binding indicates whether members
+share a common object or action. 19 singletons (5,776 skills) are omitted for brevity.
+Group
+
+Members (action × object)
+
+Skills
+
+Bind
+
+G1
+G2
+G3
+G4
+G5
+G6
+G7
+G8
+G9
+G10
+
+implement × code, impl. × api, impl. × data
+document × doc, generate × doc, review × doc
+orchestrate × agent, impl. × agent, config. × agent
+configure × infra, deploy × infra
+analyze × code, analyze × project
+configure × pipeline, impl. × pipeline
+orchestrate × pipeline, deploy × pipeline
+design × project, design × api, design × code
+design × agent, analyze × agent, doc. × agent
+configure × code, configure × project
+
+2,404
+1,309
+1,499
+637
+627
+475
+414
+441
+444
+298
+
+action
+object
+object
+object
+action
+object
+object
+action
+object
+action
+
+User message format (per batch of 100 skills).
+Tag these skills:
+{id_1}|{name_1}: {description_first_200_chars}
+{id_2}|{name_2}: {description_first_200_chars}
+...
+{id_100}|{name_100}: {description_first_200_chars}
+
+B.3
+
+Consensus Clustering over Action–Object Combinations
+
+The action × object product space contains 182 possible combinations, but the distribution is highly
+concentrated: the top 44 combinations account for 80% of all skills (14,324 of 17,810). We focus on
+these 44 combinations to discover stable groupings that seed the initial taxonomy draft.
+Embedding. Each combination is represented as the text "{action} {object}" and encoded with
+Qwen3-Embedding-8B, yielding a 4,096-dimensional vector.
+Multi-resolution clustering. We run k-means at five resolutions (k ∈ {5, 7, 10, 15, 20}) with 20
+random initializations each, and build a co-association matrix: entry (i, j) records the fraction of runs
+in which combinations i and j are assigned to the same cluster.
+Strict consensus groups. Two combinations are linked if and only if they co-occur in all five
+resolutions (threshold = 5/5); that is, regardless of whether k is 5 or 20, the pair is always assigned to
+the same cluster. Connected components of this graph yield 10 stable groups (25 combinations) and
+19 singletons (Table 8).
+The groups fall into two types: object-bound groups, in which diverse actions share a common object
+(e.g., G2: document × doc, generate × doc, review × doc); and action-bound groups, in which a
+single action spans multiple objects (e.g., G1: implement × code, implement × api, implement × data).
+Object-bound groups outnumber action-bound groups 6 to 4; these stable groups seed the initial
+taxonomy draft (§B.4).
+B.4
+
+Iterative Taxonomy Design
+
+The final two-level taxonomy (Table 2) is the product of an iterative, human-in-the-loop process. The
+10 stable groups identified by consensus clustering (§B.3) were used to seed an initial draft taxonomy
+with 7 Major categories and 21 Sub-categories. Experts then iteratively reviewed stratified samples of
+200 skills, identifying structural ambiguities such as an over-broad Documentation & Knowledge
+category, mixed classification axes within Software Engineering, and scattered ML-related skills
+across Data and SE. Through successive rounds of review and revision, the taxonomy was refined
+into the final 6 Major / 18 Sub structure.
+B.5
+
+LLM-based Skill Assignment
+
+While tag-based heuristic rules were effective for discovering the taxonomy structure, we found them
+insufficient for precise assignment of individual skills. Three-axis tags (action, object, domain) capture
+only surface-level attributes and cannot distinguish skills whose true purpose is apparent only from
+16
+
+62.2% (11,085)
+
+Software Engineering
+11.6% (2,074)
+
+AI Agents
+Business & Planning
+
+9.0% (1,609)
+
+Data & ML
+
+7.4% (1,311)
+
+Content Creation
+
+6.6% (1,176)
+3.1% (555)
+
+Information Retrieval
+0
+
+10
+
+20
+
+30
+40
+50
+% of Total Skills
+
+60
+
+70
+
+Figure 4: Major-category distribution of the 17,810 skills. Software Engineering dominates (62.2%),
+creating a 20× imbalance with the smallest category (Information Retrieval, 3.1%).
+70
+
+Proportion (%)
+
+60
+
+Full Library (17,810)
+
+62.2 62.3 62.8
+
+Train (10,123)
+
+Eval (6,660)
+
+50
+40
+30
+20
+11.6 11.4 11.4
+
+10
+0
+
+SE
+
+AI
+
+9.0 9.0 9.2
+
+7.4 7.8 6.5
+
+6.6 6.4 6.9
+
+B&P
+
+D&ML
+
+CC
+
+IR
+
+Figure 5: Major-category distribution across data splits. The three bars per category (full library, train,
+eval) show near-identical proportions (< 1 pp deviation), confirming that the disjoint split preserves
+the natural category distribution.
+
+the name and description. For example, a skill tagged implement / content / business_ops
+is routed to Software Engineering by tag-based rules, although its description reveals a marketingcampaign planner that belongs in Business & Planning.
+To address these limitations, we classify all 17,810 skills using Claude Sonnet 4.6 via the Anthropic
+API.
+System prompt.
+You are a taxonomy classifier for AI agent skills.
+Each skill is a reusable instruction file that extends
+an LLM’s capabilities. Given a skill’s name and
+description, assign it to exactly one (Major,
+Sub-category) pair from the taxonomy below.
+TAXONOMY:
+## Software Engineering
+- Development / Analysis & Testing
+- Infrastructure & DevOps / Security
+- Version Control / Documentation
+## AI Agents
+- Agent Development / Orchestration / Evaluation
+## Data & ML
+- Data Engineering / Data Analysis / ML Development
+
+17
+
+## Content Creation
+- Writing & Text / Visual & Media
+## Business & Planning
+- Business Analysis / Project Management
+## Information Retrieval
+- Technical Search / General Search
+CLASSIFICATION PRINCIPLE:
+- Classify by the DOMAIN in which the skill’s
+capability is used.
+- Every skill extends an agent’s capabilities,
+but classify by WHAT the extended capability
+is about, not the fact that an agent uses it.
+- Technical docs (README, API docs) -> SE / Docs.
+- Product planning (PRD, sprints, Jira)
+-> Business & Planning / Project Management.
+- Pure business analysis (market research)
+-> Business & Planning / Business Analysis.
+- Text/media as final product -> Content Creation.
+- AI Agents is ONLY for the agent system itself
+(prompts, routing, MCP servers, evaluation).
+- Information Retrieval is ONLY when the PRIMARY
+output is found/retrieved content.
+OUTPUT: a JSON array, one object per skill.
+{"id": "...", "major": "...", "sub": "..."}
+No markdown fences. No explanations.
+
+User message format (per batch of 50 skills).
+Classify these skills:
+{id_1}|{name_1}: {description_first_300_chars}
+{id_2}|{name_2}: {description_first_300_chars}
+...
+{id_50}|{name_50}: {description_first_300_chars}
+
+B.6
+
+Human Validation of Assignment
+
+To verify the quality of LLM-based assignment, a stratified random sample of 200 skills is drawn
+from the classified corpus, preserving the corpus-level distribution across all six Major categories.
+Experts independently judge whether each skill’s assigned Major and Sub-category are appropriate.
+The average accuracy across the reviewers is 95.5% for major categories and 92.2% for sub-categories.
+Full three-way agreement is reached on 91.0% (major) and 84.5% (sub) of the 200 items. Table 9
+reports the per-category breakdown.
+
+Table 9: Per-category accuracy of LLM-based taxonomy assignment, averaged over independent
+reviewers on a stratified sample of 200 skills.
+n
+
+Major Acc.
+
+Sub Acc.
+
+Software Engineering
+AI Agents
+Business & Planning
+Data & ML
+Content Creation
+Information Retrieval
+
+120
+20
+20
+15
+15
+10
+
+97.5%
+91.7%
+96.7%
+82.2%
+93.3%
+100.0%
+
+93.1%
+85.0%
+96.7%
+82.2%
+93.3%
+100.0%
+
+Total
+
+200
+
+95.5%
+
+92.2%
+
+Major Category
+
+18
+
+C
+
+Query Generation
+
+C.1
+
+Query Generation Prompt
+
+Each generation call receives the name and full body of the sampled skill(s) as {skills_text}, a
+random subset of 165 GAIA [21] validation questions as {seeds_text}, and up to 30 previously
+generated queries for the same skill as {prev_section} to suppress near-duplicate outputs. There
+is no system prompt; the entire instruction is issued as a single user turn. If the model judges the skill
+combination to be unrealistic, it outputs None and the combination is discarded.
+User prompt.
+Write one realistic message that a user might send to an AI
+coding assistant.
+The message must naturally require ALL of the following
+skills to fulfill:
+{skills_text}
+Here are {N} examples of how real users talk to AI
+assistants. Notice the variety -- questions, commands,
+multi-step requests, short and long. Match this diversity
+of tone and structure:
+{seeds_text}
+## Previously generated queries (DO NOT repeat or
+## paraphrase these)
+{prev_queries}
+RULES:
+- Do NOT always start with "I’m" or "I need". Vary the
+opening: use questions ("How do I..."), commands
+("Set up..."), descriptions ("Our team has..."), etc.
+- Do NOT mention skill names. The need must arise from
+the task description itself.
+- Do NOT explain, evaluate, or comment on the skills.
+Just write the user message.
+- The message must be standalone (no prior conversation
+context needed).
+- Your query must be DIFFERENT from any previously
+generated query listed above. Use a different scenario,
+domain, or framing.
+- If this skill combination makes no sense together in
+any realistic scenario, output exactly: None
+YOUR OUTPUT (one line only -- either a user message
+or None):
+
+C.2
+
+Multi-Perspective LLM Review
+
+Each query–skill pair that passes the leakage filter is evaluated by Claude Sonnet 4.6 using three
+independent reviewer prompts issued in separate API calls. Each prompt adopts a distinct evaluation
+persona—Skill Coherence, Query Quality, and Benchmark Discriminability—so that each dimension
+is assessed without anchoring bias from the others. A query is marked invalid if two or more reviewers
+return an invalid verdict; a single invalid verdict routes the query to human expert review rather than
+discarding it outright.
+Reviewer 1 — Skill Coherence.
+You are a benchmark quality reviewer evaluating skill-query alignment.
+SKILL(S):
+
+19
+
+{skills_block}
+USER QUERY:
+{query}
+Does this query genuinely require the skill(s) listed above?
+- Is there a meaningful semantic connection between the skill
+description and the query?
+- If multiple skills are provided, does the query naturally
+require all of them?
+- Mark INVALID if the skill and query are unrelated or the
+combination is forced.
+Be conservative: only mark INVALID when clearly problematic.
+When in doubt, mark VALID.
+Respond in JSON only (no markdown):
+{"verdict": "valid" or "invalid", "reasoning": "1-2 sentences"}
+
+Reviewer 2 — Query Quality.
+You are a benchmark quality reviewer evaluating query realism
+and specificity.
+SKILL(S):
+{skills_block}
+USER QUERY:
+{query}
+Is this a well-formed, realistic user query?
+- Is the request specific and answerable?
+- Could this plausibly come from a real user in a professional
+setting?
+- Is the content technically coherent?
+- Mark INVALID if the query is too vague, unrealistic, or
+technically incoherent.
+Be conservative: only mark INVALID when clearly problematic.
+When in doubt, mark VALID.
+Respond in JSON only (no markdown):
+{"verdict": "valid" or "invalid", "reasoning": "1-2 sentences"}
+
+Reviewer 3 — Benchmark Discriminability.
+You are a benchmark quality reviewer evaluating whether a query
+can distinguish models that have access to the skill from those
+that do not.
+SKILL(S):
+{skills_block}
+USER QUERY:
+{query}
+Can this query discriminate between models with and without
+the skill?
+- Would a model lacking this specific skill fail to answer
+it well?
+- Is the query too generic -- answerable by any capable model
+without specialized skill knowledge?
+- Mark INVALID if the query can be answered adequately without
+the specific skill.
+
+20
+
+Be conservative: only mark INVALID when clearly problematic.
+When in doubt, mark VALID.
+Respond in JSON only (no markdown):
+{"verdict": "valid" or "invalid", "reasoning": "1-2 sentences"}
+
+D
+
+Top-k Reranking Depth Ablation
+
+Table 10 reports NDCG@10 for three first-stage retrievers across reranking depths k ∈ {10, 20, 50}
+using Qwen3-Reranker-0.6B and Qwen3-Reranker-8B. Larger k consistently improves NDCG@10
+across all models and both rerankers. We adopt k=20 in the main experiments as a practical trade-off
+between performance and computational cost.
+Table 10: NDCG@10 at varying reranking depths k ∈ {10, 20, 50} for two rerankers across three
+first-stage retrievers. Emb. Only denotes the embedding-only baseline without reranking.
+NDCG@10 after Reranking
+
+E
+
+Emb. Only
+
+k=10
+
+k=20
+
+k=50
+
+snowflake-arctic-embed-s
+harrier-oss-v1-270m
+Qwen3-Embedding-8B
+
+53.00
+61.17
+59.98
+
+58.50
+65.40
+64.00
+
+61.90
+67.54
+66.79
+
+65.40
+69.90
+68.90
+
+snowflake-arctic-embed-s
+harrier-oss-v1-270m
+Qwen3-Embedding-8B
+
+53.00
+61.17
+59.98
+
+58.00
+65.10
+63.70
+
+61.30
+67.04
+66.44
+
+64.70
+69.70
+68.80
+
+Reranker
+
+First-Stage Model
+
+Qwen3-Reranker-0.6B
+
+Qwen3-Reranker-8B
+
+Document Representation Ablation
+
+Table 11 compares two document representation strategies across three embedding models.
+Name+Desc encodes only the skill name and description, while Full encodes the complete document
+text including the name, description, and Markdown body up to the model’s maximum sequence
+length. Full-text encoding consistently outperforms name-and-description only across all models,
+with gains of 1.5–11.4 NDCG@10 points.
+Table 11: Effect of document representation on NDCG@10.
+Model
+snowflake-arctic-embed-s
+harrier-oss-v1-270m
+Qwen3-Embedding-8B
+
+F
+
+Name+Desc
+
+Full
+
+51.50
+55.50
+48.60
+
+53.00
+61.20
+60.00
+
+Model Maximum Sequence Lengths
+
+Table 12 reports the maximum input sequence length for each model evaluated in this work. For each
+model, we use the maximum sequence length specified in the official model card or documentation.
+When no explicit limit is stated, we use the model’s default context window. Encoder-only embedding
+models are limited to 512 tokens, which truncates the majority of skill documents in the corpus.
+Decoder-only models support substantially longer contexts of 8K–32K tokens, covering nearly all
+documents. Detailed document length statistics are in Section 4.2.
+21
+
+Table 12: Maximum supported sequence length per embedding and reranking model.
+Method
+
+Model
+
+Max Tokens
+
+Embedding
+bge-small-en-v1.5
+e5-small-v2
+snowflake-arctic-embed-s
+bge-large-en-v1.5
+e5-large-v2
+F2LLM-v2-80M
+harrier-oss-v1-270m
+pplx-embed-v1-0.6b
+Qwen3-Embedding-0.6B
+jina-embeddings-v5-text-small
+harrier-oss-v1-0.6b
+NV-Embed-v1
+Octen-Embedding-8B
+Qwen3-Embedding-8B
+KaLM-Gemma3-12B
+
+512
+512
+512
+512
+512
+40,960
+32,768
+32,768
+32,768
+8,192
+32,768
+32,768
+32,768
+32,768
+8,192
+
+jina-reranker-v2-base-multilingual
+Qwen3-Reranker-0.6B
+Qwen3-Reranker-4B
+Qwen3-Reranker-8B
+
+1,024
+32,768
+32,768
+32,768
+
+Reranking
+
+G
+
+Retrieval Prompts for Each Evaluated Model
+
+For each model, we follow the query/document prompts recommended in the official model documentation, including model cards, READMEs, and reference implementations. Three models deviate
+from their default prompts.
+• Harrier-OSS and Qwen3-Embedding. Most models use task-neutral prompts such as
+query: or passage:, but both of these families default to a web search specific instruction.
+We replace it with a skill-retrieval instruction authored for this work, shown in Table 13.
+• Octen-Embedding-8B. Following the official README, we prepend "- " to each document to work around a known upstream tokenizer issue.4
+• Qwen3-Reranker. The default web search instruction is replaced with a skill search instruction we authored, shown in Table 13.
+Table 13 lists the final query and document prompts used for each model.
+
+H
+
+Fine-tuning Base Model Selection
+
+To select the base model for fine-tuning, we compared fine-tuning Qwen3-Embedding-0.6B against
+fine-tuning harrier-oss-v1-0.6b, which is itself a derivative of Qwen3-Embedding. Table 14 shows
+that both fine-tuned variants achieve nearly identical performance across all metrics, with differences
+well within noise. We therefore choose Qwen3-Embedding as the fine-tuning base to avoid double
+fine-tuning and to maintain a cleaner experimental provenance. The same rationale applies at the 8B
+scale, where we fine-tune Qwen3-Embedding-8B in preference to Octen-Embedding-8B, which is
+also Qwen3-Embedding-based.
+
+I
+
+SkillRet Fine-tuning Details
+
+We fine-tune all SkillRet models on the released training split, comprising 10,123 skills and 63,259
+synthetic queries yielding 127,190 positive query–skill pairs. Training and evaluation skills are
+disjoint.
+4 See https://huggingface.co/Qwen/Qwen3-Embedding-8B/discussions/21.
+
+22
+
+Table 13: Query and document prompts for each model. none denotes no prompt applied. † Prompt
+authored for this work.
+Model
+
+Query Prompt
+
+Doc Prompt
+
+Represent this sentence for searching relevant
+passages:
+Represent this sentence for searching relevant
+passages:
+
+none
+
+e5-small/large-v2
+
+query:
+
+passage:
+
+pplx-embed-v1-0.6b
+jina-embeddings-v5-text-small
+
+Query:
+Query:
+
+Document:
+Document:
+
+harrier-oss-v1-270m/0.6b
+
+Instruct: Given a skill search query, retrieve
+relevant skills that match the query\nQuery:†
+Instruct: Given a skill search query, retrieve
+relevant skills that match the query\nQuery:†
+
+none
+
+Instruct: Given a question, retrieve passages that can
+help answer the question.\nQuery:
+Instruct: Given a query, retrieve documents that
+answer the query\nQuery:
+
+none
+
+none
+none
+
+none
+-
+
+none
+Given a skill search query, judge whether the skill
+document is relevant and useful for the query†
+
+none
+none
+
+Embedding
+bge-small/large-en-v1.5
+snowflake-arctic-embed-s
+
+Qwen3-Embedding-0.6B/8B
+F2LLM-v2-80M
+KaLM-Gemma3-12B
+NV-Embed-v1
+Octen-Embedding-8B
+Reranking
+jina-reranker-v2-base-multilingual
+Qwen3-Reranker-0.6B/4B/8B
+
+none
+
+none
+
+none
+
+Table 14: Fine-tuning base model comparison at 0.6B scale. (ft) denotes fine-tuned on SkillRet
+training data.
+NDCG
+
+Recall
+
+Completeness
+
+Model
+
+@5
+
+@10
+
+@15
+
+@5
+
+@10
+
+@15
+
+@5
+
+@10
+
+@15
+
+harrier-oss-v1-0.6b
+harrier-oss-v1-0.6b (ft)
+
+64.24
+75.80
+
+66.55
+78.34
+
+67.54
+79.34
+
+67.06
+79.65
+
+73.09
+86.13
+
+76.27
+89.28
+
+50.57
+66.72
+
+57.37
+76.03
+
+61.12
+80.83
+
+Qwen3-Embedding-0.6B
+SkillRet-Embedding-0.6B (ft)
+
+56.23
+75.57
+
+58.35
+78.03
+
+59.34
+78.87
+
+59.29
+79.15
+
+64.89
+85.42
+
+68.06
+88.09
+
+41.98
+65.96
+
+47.27
+75.09
+
+50.31
+79.03
+
+Embedding models. We fine-tune Qwen3-Embedding-0.6B and Qwen3-Embedding-8B using MultipleNegativesRankingLoss. Each query is paired with one positive skill document per training
+instance, so a query with multiple ground-truth skills contributes multiple pairs, with remaining
+in-batch examples serving as negatives. Skill documents are encoded as name | description |
+skill_md, matching the evaluation document representation. We apply the same skill-retrieval query
+instruction used in evaluation (Table 13) to anchor queries during training. Both models are trained
+for one epoch with maximum sequence length 8192, learning rate 2 × 10−5 , warmup ratio 0.1, bf16
+precision, and gradient checkpointing on 4 GPUs. The 0.6B model uses per-device batch size 96,
+effective batch 384, while the 8B model uses per-device batch size 20, effective batch 80.
+Reranker model. We fine-tune Qwen3-Reranker-0.6B using the same yes/no token scoring interface
+used at inference time. For each query–document pair, the model receives a chat-formatted prompt
+containing the skill-search instruction, query, and candidate skill document, and is trained with
+binary cross-entropy on the probability of the “yes” token versus the “no” token. Positive pairs come
+from the ground-truth query–skill labels. For negatives, we mine hard negatives using the fine-tuned
+SkillRet-Embedding-0.6B retriever. For each query, we retrieve the top 60 candidates, skip the top 20
+near-neighbor candidates, and use up to 7 remaining non-relevant candidates, filling any missing slots
+with random negatives. The reranker is trained for one epoch with maximum sequence length 8192,
+learning rate 2 × 10−5 , warmup ratio 0.1, bf16 precision, and gradient checkpointing on 8 GPUs.
+Per-device batch size is 96, effective batch 768.
+23
+
+J
+
+MTEB Retrieval vs. S KILL R ET Performance
+
+Table 15 lists MTEB Retrieval scores alongside S KILL R ET NDCG@10 for all evaluated models,
+sorted by MTEB Retrieval score in descending order. A moderate positive correlation is visible in the
+overall trend, yet notable exceptions appear in both directions. KaLM-Gemma3-12B, for instance,
+leads on MTEB at 75.66 but achieves only 55.38 on S KILL R ET, the largest drop among all models.
+Conversely, some models with low MTEB scores remain highly competitive on S KILL R ET. harrieross-v1-0.6b ranks 4th on MTEB at 70.75 yet achieves the best off-the-shelf score on S KILL R ET
+at 66.55, and encoder-only models with as few as 33M parameters reach S KILL R ET scores in the
+range of 51–53, comparable to NV-Embed-v1 at 7B which scores 53.12 despite a substantially higher
+MTEB score of 53.98. Together, these patterns suggest that skill retrieval is a distinct task from
+general information retrieval, requiring models to identify specific capability signals within long,
+multi-sentence queries.
+Table 15: MTEB Retrieval score vs. S KILL R ET NDCG@10. Models sorted by MTEB Retrieval score
+in descending order.
+
+K
+
+Model
+
+Params
+
+MTEB Retr.
+
+SkillRet NDCG@10
+
+KaLM-Gemma3-12B
+Octen-Embedding-8B
+Qwen3-Embedding-8B
+harrier-oss-v1-0.6b
+harrier-oss-v1-270m
+jina-embeddings-v5-text-small
+Qwen3-Embedding-0.6B
+NV-Embed-v1
+F2LLM-v2-80M
+e5-large-v2
+snowflake-arctic-embed-s
+e5-small-v2
+bge-large-en-v1.5
+bge-small-en-v1.5
+
+12B
+8B
+8B
+0.6B
+270M
+0.6B
+0.6B
+7B
+80M
+335M
+33M
+118M
+335M
+33M
+
+75.66
+71.61
+70.88
+70.75
+66.38
+64.88
+64.65
+53.98
+50.13
+40.06
+39.84
+39.38
+39.00
+36.26
+
+55.38
+62.56
+60.00
+66.55
+61.17
+59.50
+58.35
+53.12
+45.52
+50.21
+52.99
+41.82
+55.82
+51.68
+
+Per-Sub-category Retrieval Performance
+
+Table 16 provides a complete breakdown of NDCG@10 and Recall@10 across all 18 Sub-categories
+for both base and fine-tuned Qwen3-Embedding models. Sub-categories are grouped by Major
+category and sorted by fine-tuned 8B NDCG@10 within each group. This table supports the intraMajor hard-negative analysis in §5.3.
+
+L
+
+Qualitative Visualization of Sentence Erasure Importance
+
+To complement the aggregate masking results in Table 5, we provide a qualitative example of the
+sentence-level erasure analysis in Fig. 6. For each sentence in the query, we measure the similarity
+drop after replacing that sentence with [MASK]. A larger drop indicates that the sentence contributes
+more strongly to retrieving the gold skill.
+
+M
+
+Broader Impacts
+
+S KILL R ET is intended to support research on reliable skill retrieval for LLM agents. By isolating
+retrieval quality from downstream execution, it provides a controlled benchmark for studying how
+well models select relevant procedural knowledge from large skill libraries. This may help reduce
+context cost, improve reproducibility, and diagnose retrieval failures across domains. At the same
+time, strong retrieval performance does not imply safe or correct end-to-end agent behavior. Retrieved
+skills may be outdated, unsafe, misapplied, or incorrectly composed with other skills. Therefore,
+S KILL R ET should not be used as evidence that a deployed agent system is safe or reliable. The
+24
+
+Table 16: Per-Sub-category NDCG@10 and Recall@10 for base and fine-tuned Qwen3-Embedding
+models. Sub-categories grouped by Major category. n = number of evaluation queries per Subcategory.
+NDCG@10
+
+Recall@10
+
+95.0
+91.5
+90.0
+90.1
+86.3
+85.0
+
+Software Eng.
+
+8B-ft
+
+Infra. & DevOps
+Development
+Security
+Documentation
+Analysis & Testing
+Version Control
+
+934
+1764
+314
+424
+1063
+367
+
+58.8
+59.3
+60.4
+38.9
+43.2
+28.0
+
+73.2
+72.4
+66.8
+62.1
+59.2
+53.1
+
+62.1
+64.7
+62.4
+34.4
+46.9
+28.4
+
+78.0
+77.0
+69.5
+68.2
+65.7
+60.1
+
+71.5
+71.8
+71.3
+50.7
+53.5
+37.6
+
+91.2
+86.4
+84.9
+83.7
+76.9
+72.5
+
+76.6
+77.0
+76.8
+45.5
+59.5
+40.5
+
+AI Ag.
+
+8B
+
+Agent Development
+Agent Evaluation
+Agent Orchestration
+
+524 30.2
+104 36.5
+293 21.2
+
+52.8
+50.1
+46.8
+
+26.9 59.9
+33.7 59.3
+21.2 55.0
+
+40.4
+45.2
+31.4
+
+74.7
+69.2
+64.5
+
+38.3 84.9
+49.0 80.8
+30.7 77.3
+
+B&P
+
+8B-ft 0.6B 0.6B-ft
+
+Business Analysis
+Project Mgmt.
+
+394 41.8
+372 34.0
+
+69.8
+62.3
+
+45.8 74.8
+29.9 67.1
+
+51.5
+43.7
+
+89.6
+81.1
+
+58.1 93.9
+40.6 89.5
+
+D&ML
+
+8B
+
+ML Development
+Data Analysis
+Data Engineering
+
+179 73.8
+153 63.3
+200 67.5
+
+82.4
+77.7
+73.8
+
+79.5 82.3
+61.8 81.9
+67.8 77.6
+
+85.2
+75.2
+82.8
+
+94.7
+92.2
+89.8
+
+90.8 95.3
+72.6 97.4
+81.3 93.8
+
+CC
+
+n 0.6B 0.6B-ft
+
+Visual & Media
+Writing & Text
+
+242 48.6
+333 33.5
+
+73.3
+71.1
+
+46.1 75.0
+39.8 74.2
+
+60.5
+43.8
+
+88.8
+89.8
+
+58.9 93.4
+51.1 94.1
+
+IR
+
+Major Sub-category
+
+General Search
+Technical Search
+
+164 26.8
+103 22.1
+
+62.0
+49.1
+
+24.9 67.5
+19.3 55.2
+
+35.4
+31.1
+
+78.1
+65.1
+
+35.4 86.6
+26.2 75.7
+
+[1] Can you help me refactor
+our data_pipeline.py module?
+
+0.010
+
+[2] It's a 400-line mess that
+pulls records from three
+different APIs, normalises them,
+and inserts into Postgres.
+[3] Right now it uses raw requests
+calls with no error handling,
+returns plain dicts everywhere,
+and has zero type annotations.
+[4] I'd like it rewritten to use async def
+with concurrent HTTP fetches, Pydantic
+models for the responses. I need it to
+support running with full type hints...
+[5] Also add a __main__ block so it can
+run as a standalone script, using the
+date range as params for testing the
+normalisation logic against edge cases.
+[6] The whole thing should be clean
+enough to pass mypy --strict and
+ruff without warnings.
+
+0.006
+0.008
+
+SKLL Description
+
+Guide for writing clean, efficient,
+idiomatic Python 3.11+ code.
+Enforces type hints, Pydantic v2
+for APIs, comprehensions over
+loops, EAFP error handling.
+
+skill-relevant
+0.160
+
+0.012
+0.009
+
+Base (Qwen3-Emb-0.6B)
+Trained (SkillRet-Emb-0.6B)
+
+0.000 0.025 0.050 0.075 0.100 0.125 0.150
+
+Setnece importance (sim drop)
+
+Figure 6: Sentence-level erasure importance for an example query. Each bar shows the similarity
+drop after replacing a sentence with [MASK]. The trained model concentrates more importance on the
+skill-relevant sentence, whereas the base model assigns importance more diffusely across the query.
+dataset is derived from public GitHub-hosted skills and synthetic queries. It is intended for retrieval
+evaluation and model development, not for profiling individual authors, inferring personal attributes,
+or certifying downstream agent safety. Practical deployments should include additional safeguards
+such as provenance checks, permission controls, sandboxing, and human oversight for high-impact
+actions.
+
+25
+
+
