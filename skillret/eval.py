@@ -47,12 +47,48 @@ apply_transformers_compat_patches()
 def _load_hf_dataset(subset: str, split: str = "test") -> list[dict]:
     """Load a subset/split from HuggingFace, caching automatically."""
     try:
-        from datasets import load_dataset
+        from datasets import load_dataset, Features, Value, Sequence
     except ImportError:
         raise ImportError(
             "The 'datasets' package is required. Install with: pip install datasets"
         )
-    ds = load_dataset(HF_DATASET_ID, subset, split=split)
+
+    try:
+        ds = load_dataset(HF_DATASET_ID, subset, split=split)
+    except Exception as e:
+        # Work around schema mismatch in the queries subset:
+        # actual data contains `original_query`, but older schema may not.
+        if subset == "queries" and (
+            "column names don't match" in str(e)
+            or "CastError" in str(e)
+            or "DatasetGenerationError" in str(type(e))
+        ):
+            query_features = Features(
+                {
+                    "id": Value("string"),
+                    "original_id": Value("string"),
+                    "query": Value("string"),
+                    "skill_ids": Sequence(Value("string")),
+                    "skill_names": Sequence(Value("string")),
+                    "k": Value("int64"),
+                    "generator_model": Value("string"),
+                    "original_query": Value("string"),
+                }
+            )
+
+            ds = load_dataset(
+                HF_DATASET_ID,
+                subset,
+                split=split,
+                features=query_features,
+            )
+        else:
+            raise
+
+    # 如果后续代码不需要 original_query，就删掉，保持旧接口兼容
+    if subset == "queries" and "original_query" in ds.column_names:
+        ds = ds.remove_columns(["original_query"])
+
     return [dict(row) for row in ds]
 
 

@@ -1,0 +1,10 @@
+scripts/run_eval_embedding.sh: line 114: flock: command not found
+[GPU 0] â–¶ pipizhao/SkillRouter-Embedding-0.6B
+[GPU 0] Eval: pipizhao/SkillRouter-Embedding-0.6B â†’ results/embed/pipizhao_SkillRouter-Embedding-0.6B.log
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+`torch_dtype` is deprecated! Use `dtype` instead!
+Auto-detected embedding batch_size=16 for pipizhao/SkillRouter-Embedding-0.6B
+Loading weights:   0%|          | 0/310 [00:00<?, ?it/s]Loading weights: 100%|¨€¨€¨€¨€¨€¨€¨€¨€¨€¨€| 310/310 [00:00<00:00, 3787.39it/s]
+Loaded 6660 skills from corpus (test split)
+native-encode:   0%|          | 0/417 [00:00<?, ?it/s]native-encode:   0%|          | 1/417 [00:04<30:02,  4.33s/it][GPU 0] âœ— FAILED: pipizhao/SkillRouter-Embedding-0.6B
+scripts/run_eval_embedding.sh: line 127: flock: command not found
